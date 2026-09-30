@@ -13,7 +13,6 @@ from pathlib import Path
 import edge_tts
 import requests
 
-# রেজোলিউশন ও অপ্টিমাইজড ফ্রেম রেট
 W, H, FPS = 1280, 720, 30
 VF = f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},setsar=1,fps={FPS},format=yuv420p"
 FADE = 0.20
@@ -49,7 +48,10 @@ output_dir.mkdir(exist_ok=True)
 
 def run(cmd):
     cmd = [str(c) for c in cmd]
-    subprocess.run(cmd, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    if res.returncode != 0:
+        print(f"FFmpeg error: {res.stderr[-300:]}", flush=True)
+        raise subprocess.CalledProcessError(res.returncode, cmd)
 
 
 def duration(path):
@@ -78,9 +80,10 @@ async def tts(text, path, voice, rate):
                 await edge_tts.Communicate(text, v, rate=rate).save(str(path))
                 if path.exists() and path.stat().st_size > 500:
                     return
-            except Exception:
+            except Exception as e:
+                print("TTS retry:", v, attempt, e, flush=True)
                 await asyncio.sleep(1)
-    raise RuntimeError("TTS failed: " + text[:40])
+    raise RuntimeError("TTS failed for text: " + text[:40])
 
 
 def download(url, path):
@@ -130,7 +133,11 @@ def build_scene(args):
         else:
             run(["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", "4.0", mp3])
 
-        d = duration(mp3) + 0.35
+        # MP3 অডিওটিকে PCM WAV ফরম্যাটে কনভার্ট করে রাখা
+        wav = work / f"a{i}.wav"
+        run(["ffmpeg", "-y", "-i", mp3, "-ac", "2", "-ar", "48000", "-c:a", "pcm_s16le", wav])
+
+        d = duration(wav) + 0.35
 
         urls = []
         if scene.get("clip_url"):
@@ -169,9 +176,9 @@ def build_scene(args):
         run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", vid])
 
         scene_out = work / f"scene{i:03d}.mkv"
-        run(["ffmpeg", "-y", "-i", vid, "-i", mp3,
-             "-map", "0:v", "-map", "1:a", "-c:v", "copy",
-             "-af", "aresample=48000,apad", "-ac", "2", "-c:a", "pcm_s16le",
+        run(["ffmpeg", "-y", "-i", vid, "-i", wav,
+             "-map", "0:v", "-map", "1:a",
+             "-c:v", "copy", "-c:a", "pcm_s16le",
              "-t", f"{d:.2f}", scene_out])
         print(f"Scene {i+1} completed", flush=True)
         return scene_out
@@ -187,8 +194,8 @@ def get_music():
     if files:
         return random.choice(files)
     pad = work / "pad.wav"
-    expr = ("0.22*sin(2*PI*110*t)+0.15*sin(2*PI*164.81*t)+0.12*sin(2*PI*220*t)"
-            "+0.08*sin(2*PI*277.18*t)+0.06*sin(2*PI*329.63*t)")
+    expr = ("0.18*sin(2*PI*110*t)+0.12*sin(2*PI*164.81*t)+0.10*sin(2*PI*220*t)"
+            "+0.06*sin(2*PI*277.18*t)+0.04*sin(2*PI*329.63*t)")
     run(["ffmpeg", "-y", "-f", "lavfi",
          "-i", f"aevalsrc={expr}:s=48000:d=60",
          "-af", "lowpass=f=900,afade=t=in:d=2,afade=t=out:st=58:d=2",
@@ -196,7 +203,6 @@ def get_music():
     return str(pad)
 
 
-# মাল্টি-কোর সমান্তরাল রেন্ডারিং (দ্রুত রেন্ডার করার জন্য)
 with ThreadPoolExecutor(max_workers=4) as pool:
     results = list(pool.map(build_scene, list(enumerate(scenes))))
 
@@ -212,12 +218,11 @@ run(["ffmpeg", "-y", "-f", "concat", "-safe", "0", "-i", concat_list, "-c", "cop
 total = duration(allmkv)
 music = get_music()
 
+# নিশ্চিতভাবে ভয়েস এবং ব্যাকগ্রাউন্ড মিউজিক একীভূত করা
 fc = (
-    "[0:a]highpass=f=75,acompressor=threshold=0.1:ratio=3:attack=5:release=120:makeup=2[vo];"
-    "[vo]asplit=2[vo1][sc];"
-    "[1:a]aresample=48000,aformat=channel_layouts=stereo,volume=0.22[mus];"
-    "[mus][sc]sidechaincompress=threshold=0.03:ratio=8:attack=15:release=600[duck];"
-    "[vo1][duck]amix=inputs=2:duration=first:weights='1 0.85':normalize=0[mix]"
+    "[0:a]volume=1.5,highpass=f=75[vo];"
+    "[1:a]volume=0.18,afade=t=in:d=2[mus];"
+    "[vo][mus]amix=inputs=2:duration=first:dropout_transition=2[mix]"
 )
 mix = work / "mix.wav"
 run(["ffmpeg", "-y", "-i", allmkv, "-stream_loop", "-1", "-i", music,
@@ -227,11 +232,12 @@ run(["ffmpeg", "-y", "-i", allmkv, "-stream_loop", "-1", "-i", music,
 final_primary = out / "final.mp4"
 final_compat = output_dir / "final_video.mp4"
 
+# পরিষ্কার AAC অডিও স্ট্রীম সহ ফাইনাল MP4 জেনারেট করা
 run(["ffmpeg", "-y", "-i", allmkv, "-i", mix,
-     "-map", "0:v", "-map", "1:a",
-     "-af", f"loudnorm=I=-16:TP=-1.5:LRA=11,afade=t=out:st={max(total - 2, 0):.2f}:d=2",
-     "-c:v", "copy", "-c:a", "aac", "-b:a", "256k", "-ar", "48000",
-     "-movflags", "+faststart", "-t", f"{total:.2f}", final_primary])
+     "-map", "0:v:0", "-map", "1:a:0",
+     "-c:v", "copy",
+     "-c:a", "aac", "-b:a", "192k", "-ar", "48000", "-ac", "2",
+     "-shortest", "-movflags", "+faststart", final_primary])
 
 shutil.copy(final_primary, final_compat)
-print("Rendering finished perfectly in record time!")
+print(f"Video rendered successfully with audio track: {final_primary}")
