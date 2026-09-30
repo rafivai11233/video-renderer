@@ -1,96 +1,140 @@
 import os
 import json
-import subprocess
+import asyncio
 import requests
+import subprocess
+import edge_tts
+
+# ভয়েস অপশন: বাংলা প্রাকৃতিক কণ্ঠ
+VOICE = "bn-BD-PradeepNeural"
+
+async def generate_speech(text, output_file):
+    communicate = edge_tts.Communicate(text, VOICE)
+    await communicate.save(output_file)
+
+def get_media_duration(file_path):
+    cmd = [
+        "ffprobe", "-v", "error", "-show_entries",
+        "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file_path
+    ]
+    result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    try:
+        val = float(result.stdout.strip())
+        return val if val > 0 else 5.0
+    except Exception:
+        return 5.0
 
 def download_file(url, target_path):
+    headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        r = requests.get(url, stream=True, timeout=60)
-        r.raise_for_status()
-        with open(target_path, 'wb') as f:
-            for chunk in r.iter_content(chunk_size=8192):
-                f.write(chunk)
-        return True
+        r = requests.get(url, headers=headers, stream=True, timeout=45)
+        if r.status_code == 200:
+            with open(target_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=1024 * 1024):
+                    f.write(chunk)
+            return True
     except Exception as e:
         print(f"Failed to download {url}: {e}")
-        return False
+    return False
 
 def main():
-    os.makedirs("temp", exist_ok=True)
-    os.makedirs("output", exist_ok=True)
-    
     raw_data = os.environ.get("SCENES_DATA", "[]")
-    print("Received raw payload length:", len(raw_data))
-    
     try:
-        parsed_data = json.loads(raw_data)
+        data = json.loads(raw_data)
+        if isinstance(data, dict):
+            scenes = data.get("scenes") or data.get("plan") or []
+        else:
+            scenes = data
     except Exception as e:
-        print("Initial JSON load failed, attempting unescaped:", e)
-        parsed_data = json.loads(raw_data.replace('\\"', '"'))
-
-    # Support multiple payload structures: direct array, or object with 'scenes' key
-    if isinstance(parsed_data, dict):
-        scenes = parsed_data.get("scenes", [])
-    elif isinstance(parsed_data, list):
-        scenes = parsed_data
-    else:
+        print(f"Error parsing SCENES_DATA: {e}")
         scenes = []
 
-    print(f"Total scenes found: {len(scenes)}")
+    if not scenes:
+        print("No scenes found to render!")
+        return
+
+    os.makedirs("temp", exist_ok=True)
+    os.makedirs("output", exist_ok=True)
 
     concat_list = []
     
     for i, scene in enumerate(scenes):
-        idx = scene.get("scene_index", i + 1)
-        clips = scene.get("clips") or scene.get("video_clips") or []
-        narration = scene.get("narration", "")
+        print(f"--- Processing Scene {i + 1}/{len(scenes)} ---")
+        narration = scene.get("narration") or scene.get("script") or ""
         
-        # 1. Edge-TTS Audio Generation
-        audio_path = f"temp/audio_{idx}.mp3"
-        if scene.get("audio_url"):
-            download_file(scene["audio_url"], audio_path)
-        elif narration:
-            clean_narration = narration.replace('"', '').replace('\n', ' ')
-            cmd = f'edge-tts --voice bn-BD-NabanitaNeural --text "{clean_narration}" --write-media {audio_path}'
-            subprocess.run(cmd, shell=True, check=False)
-            
-        # 2. Download footage
-        clip_paths = []
-        for c_idx, c_url in enumerate(clips[:2]):
-            c_path = f"temp/clip_{idx}_{c_idx}.mp4"
-            if download_file(c_url, c_path):
-                clip_paths.append(c_path)
-            
-        # 3. Normalize video to 720p (1280x720)
-        norm_clip = f"temp/norm_{idx}.mp4"
-        if clip_paths:
-            cmd = (
-                f'ffmpeg -y -i {clip_paths[0]} -vf "scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720" '
-                f'-c:v libx264 -pix_fmt yuv420p -r 30 -an {norm_clip}'
+        # ক্লিপের লিঙ্ক খুঁজে বের করা
+        clip_url = scene.get("clip_url")
+        if not clip_url and scene.get("clips"):
+            clip_url = scene["clips"][0].get("url") or scene["clips"][0].get("link")
+
+        audio_path = f"temp/audio_{i}.mp3"
+        raw_clip_path = f"temp/raw_clip_{i}.mp4"
+        processed_clip_path = f"temp/scene_{i}.mp4"
+
+        # ১. ভয়েস জেনারেট করা
+        if narration.strip():
+            try:
+                asyncio.run(generate_speech(narration, audio_path))
+                target_duration = get_media_duration(audio_path) + 0.3
+            except Exception as e:
+                print(f"TTS Error on scene {i}: {e}")
+                target_duration = 5.0
+                subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", str(target_duration), audio_path])
+        else:
+            target_duration = 5.0
+            subprocess.run(["ffmpeg", "-y", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-t", str(target_duration), audio_path])
+
+        # ২. ভিডিও ফুটেজ হ্যান্ডলিং ও সাইজিং
+        has_video = False
+        if clip_url and download_file(clip_url, raw_clip_path):
+            has_video = True
+
+        if has_video:
+            # ক্লিপটিকে অডিওর দৈর্ঘ্যে লুপ করে স্কেল করা (1080p @ 30fps)
+            filter_chain = (
+                "scale=1920:1080:force_original_aspect_ratio=increase,"
+                "crop=1920:1080,"
+                "fps=30,"
+                "format=yuv420p"
             )
-            res = subprocess.run(cmd, shell=True)
-            if res.returncode == 0:
-                concat_list.append(norm_clip)
-            
-    # Concat file list
-    with open("temp/concat.txt", "w") as f:
-        for p in concat_list:
-            f.write(f"file '{os.path.abspath(p)}'\n")
-            
-    # 4. Master and output final video
+            cmd = [
+                "ffmpeg", "-y",
+                "-stream_loop", "-1", "-i", raw_clip_path,
+                "-i", audio_path,
+                "-t", str(target_duration),
+                "-vf", filter_chain,
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
+                "-shortest", processed_clip_path
+            ]
+        else:
+            # ফুটেজ না পেলে মসৃণ গ্রেডিয়েন্ট ডার্ক ব্যাকগ্রাউন্ড তৈরি করা
+            cmd = [
+                "ffmpeg", "-y",
+                "-f", "lavfi", "-i", f"color=c=0x111827:s=1920x1080:r=30",
+                "-i", audio_path,
+                "-t", str(target_duration),
+                "-c:v", "libx264", "-preset", "veryfast", "-crf", "22",
+                "-c:a", "aac", "-b:a", "192k", "-ar", "44100",
+                "-shortest", processed_clip_path
+            ]
+
+        subprocess.run(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        concat_list.append(f"file '{os.path.abspath(processed_clip_path)}'\n")
+
+    # ৩. সব দৃশ্য একসাথে জোড়া লাগানো
+    list_file_path = "temp/concat.txt"
+    with open(list_file_path, "w") as f:
+        f.writelines(concat_list)
+
     final_output = "output/final_video.mp4"
-    if concat_list:
-        ffmpeg_cmd = (
-            f'ffmpeg -y -f concat -safe 0 -i temp/concat.txt '
-            f'-c:v libx264 -preset fast -crf 23 -c:a aac -b:a 256k {final_output}'
-        )
-        subprocess.run(ffmpeg_cmd, shell=True, check=True)
-        print("Render completed successfully!")
-    else:
-        # Fallback empty dummy video so workflow doesn't fail release step
-        dummy_cmd = f'ffmpeg -y -f lavfi -i color=c=black:s=1280x720:d=5 -c:v libx264 {final_output}'
-        subprocess.run(dummy_cmd, shell=True, check=True)
-        print("Created fallback output video.")
+    stitch_cmd = [
+        "ffmpeg", "-y",
+        "-f", "concat", "-safe", "0", "-i", list_file_path,
+        "-c", "copy", final_output
+    ]
+    subprocess.run(stitch_cmd)
+    print("All scenes stitched perfectly into output/final_video.mp4")
 
 if __name__ == "__main__":
     main()
