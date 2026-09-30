@@ -3,16 +3,12 @@ name: Video Render Pipeline
 on:
   workflow_dispatch:
     inputs:
-      render_id:
-        description: 'Unique Render Run ID'
+      job_id:
+        description: 'Unique Render Job ID'
         required: true
-      scenes_data:
-        description: 'JSON array of scenes, clips, and narration'
+      plan:
+        description: 'JSON array or string of scenes and clips'
         required: true
-      bg_music:
-        description: 'Background music selection'
-        required: false
-        default: 'default'
 
 jobs:
   render:
@@ -34,15 +30,15 @@ jobs:
 
       - name: Run Video Stitch & Mastering
         env:
-          SCENES_DATA: ${{ github.event.inputs.scenes_data }}
-          RENDER_ID: ${{ github.event.inputs.render_id }}
+          SCENES_DATA: ${{ github.event.inputs.plan }}
+          RENDER_ID: ${{ github.event.inputs.job_id }}
         run: |
           python render.py
 
       - name: Create Release & Upload Final Video
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.inputs.render_id }}
+          tag_name: ${{ github.event.inputs.job_id }}
           files: output/final_video.mp4
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
