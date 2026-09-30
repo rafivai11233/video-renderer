@@ -1,0 +1,48 @@
+name: Video Render Pipeline
+
+on:
+  workflow_dispatch:
+    inputs:
+      render_id:
+        description: 'Unique Render Run ID'
+        required: true
+      scenes_data:
+        description: 'JSON array of scenes, clips, and narration'
+        required: true
+      bg_music:
+        description: 'Background music selection'
+        required: false
+        default: 'default'
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install FFmpeg & Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          pip install requests edge-tts
+
+      - name: Run Video Stitch & Mastering
+        env:
+          SCENES_DATA: ${{ github.event.inputs.scenes_data }}
+          RENDER_ID: ${{ github.event.inputs.render_id }}
+        run: |
+          python render.py
+
+      - name: Create Release & Upload Final Video
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.render_id }}
+          files: output/final_video.mp4
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
