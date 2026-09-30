@@ -59,7 +59,6 @@ jobs:
 
           echo "Found target video file: $TARGET_FILE"
 
-          # ট্যাগ বা রিলিজ আগে থেকে থাকলে ওভাররাইট/আপডেট করবে
           gh release delete "$TAG_NAME" -y --cleanup-tag || true
           git tag -d "$TAG_NAME" || true
           git push origin :refs/tags/"$TAG_NAME" || true
