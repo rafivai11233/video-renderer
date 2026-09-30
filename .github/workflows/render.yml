@@ -1,27 +1,23 @@
-name: Video Render Pipeline
-run-name: render ${{ inputs.job_id }}
+name: Video Renderer
 
 on:
   workflow_dispatch:
     inputs:
-      job_id:
-        description: 'Unique render job id from n8n'
-        required: true
       plan:
-        description: 'JSON plan with voice, rate and scenes'
+        description: 'Video plan JSON payload'
         required: true
-
-permissions:
-  contents: write
-
-concurrency:
-  group: video-render
-  cancel-in-progress: false
+        type: string
+      job_id:
+        description: 'Unique Job ID / Tag name'
+        required: true
+        type: string
 
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 60
+    permissions:
+      contents: write
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -29,42 +25,45 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: '3.10'
+          cache: 'pip'
 
       - name: Install System and Python Dependencies
         run: |
-          sudo apt-get update
-          sudo apt-get install -y ffmpeg
-          pip install --no-cache-dir edge-tts requests
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg
+          pip install --upgrade pip
+          pip install edge-tts requests
 
       - name: Fast Video Render & Mastering
         env:
           PLAN: ${{ inputs.plan }}
-          SCENES_DATA: ${{ inputs.plan }}
-          RENDER_ID: ${{ inputs.job_id }}
-        run: python render.py
+          JOB_ID: ${{ inputs.job_id }}
+        run: |
+          python render.py
 
       - name: Publish Video Release
         env:
-          GH_TOKEN: ${{ github.token }}
-          JOB_ID: ${{ inputs.job_id }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG_NAME: ${{ inputs.job_id }}
         run: |
           TARGET_FILE=""
           if [ -f "out/final.mp4" ]; then
             TARGET_FILE="out/final.mp4"
           elif [ -f "output/final_video.mp4" ]; then
             TARGET_FILE="output/final_video.mp4"
-          fi
-          
-          if [ -n "$TARGET_FILE" ]; then
-            gh release create "$JOB_ID" "$TARGET_FILE" --title "$JOB_ID" --notes "Automated Render Complete" --latest=false
           else
-            echo "Error: Output video not found!"
+            echo "Error: Output video file not found!"
             exit 1
           fi
 
-      - name: Prune Old Releases
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh release list --limit 100 --json tagName -q '.[5:][].tagName' | xargs -r -I{} gh release delete {} --cleanup-tag -y || true
+          echo "Found target video file: $TARGET_FILE"
+
+          # ট্যাগ বা রিলিজ আগে থেকে থাকলে ওভাররাইট/আপডেট করবে
+          gh release delete "$TAG_NAME" -y --cleanup-tag || true
+          git tag -d "$TAG_NAME" || true
+          git push origin :refs/tags/"$TAG_NAME" || true
+
+          gh release create "$TAG_NAME" "$TARGET_FILE" \
+            --title "Render Job: $TAG_NAME" \
+            --notes "Automated video render completed successfully."
