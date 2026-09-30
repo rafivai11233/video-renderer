@@ -1,19 +1,27 @@
 name: Video Render Pipeline
+run-name: render ${{ inputs.job_id }}
 
 on:
   workflow_dispatch:
     inputs:
       job_id:
-        description: 'Unique Render Job ID'
+        description: 'Unique render job id from n8n'
         required: true
       plan:
-        description: 'JSON array or string of scenes and clips'
+        description: 'JSON plan with voice, rate and scenes'
         required: true
 
-permissions: write-all
+permissions:
+  contents: write
+
+concurrency:
+  group: video-render
+  cancel-in-progress: false
+
 jobs:
   render:
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -21,25 +29,42 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.12"
 
-      - name: Install FFmpeg & Dependencies
+      - name: Install System and Python Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y ffmpeg
-          pip install requests edge-tts
+          pip install --no-cache-dir edge-tts requests
 
-      - name: Run Video Stitch & Mastering
+      - name: Fast Video Render & Mastering
         env:
-          SCENES_DATA: ${{ github.event.inputs.plan }}
-          RENDER_ID: ${{ github.event.inputs.job_id }}
+          PLAN: ${{ inputs.plan }}
+          SCENES_DATA: ${{ inputs.plan }}
+          RENDER_ID: ${{ inputs.job_id }}
+        run: python render.py
+
+      - name: Publish Video Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          JOB_ID: ${{ inputs.job_id }}
         run: |
-          python render.py
+          TARGET_FILE=""
+          if [ -f "out/final.mp4" ]; then
+            TARGET_FILE="out/final.mp4"
+          elif [ -f "output/final_video.mp4" ]; then
+            TARGET_FILE="output/final_video.mp4"
+          fi
+          
+          if [ -n "$TARGET_FILE" ]; then
+            gh release create "$JOB_ID" "$TARGET_FILE" --title "$JOB_ID" --notes "Automated Render Complete" --latest=false
+          else
+            echo "Error: Output video not found!"
+            exit 1
+          fi
 
-      - name: Create Release & Upload Final Video
-        uses: softprops/action-gh-release@v2
-        with:
-          tag_name: ${{ github.event.inputs.job_id }}
-          files: output/final_video.mp4
+      - name: Prune Old Releases
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release list --limit 100 --json tagName -q '.[5:][].tagName' | xargs -r -I{} gh release delete {} --cleanup-tag -y || true
