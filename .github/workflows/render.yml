@@ -63,7 +63,7 @@ jobs:
       - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install --no-cache-dir edge-tts requests pillow
+          pip install --no-cache-dir edge-tts requests pillow numpy
 
       - name: Fast Video Render & Mastering
         id: render
