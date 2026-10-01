@@ -1,1 +1,46 @@
 # video-renderer
+
+Free AI video pipeline renderer. Runs 100% on GitHub Actions free minutes (public repo = unlimited).
+
+**You need NO API secrets in this repo.** Gemini + Pixabay calls happen in n8n. This repo only receives a plan and renders it.
+
+## How it works
+
+n8n dispatches `render.yml` with `job_id` + `plan` (JSON). The renderer:
+
+1. Edge TTS voice per scene (with EQ / de-ess / compression cleanup)
+2. Downloads stock clips from URLs already in the plan (n8n found them on Pixabay)
+3. Cuts jump-cuts, color-grades, joins scenes with crossfade transitions
+4. Builds a music bed (files in `/music`, or synthesizes an ambient pad), sidechain-ducked under the voice
+5. Burns ASS captions, masters loudness to -14 LUFS
+6. Publishes `out/final.mp4` + `out/thumbnail.jpg` as a GitHub release tagged `job_id` (keeps newest 20)
+7. POSTs `{status, run_url}` back to n8n via `plan.resume_url`
+
+## plan.json schema (built by n8n)
+
+```json
+{
+  "job_id": "unique-run-key",
+  "title": "Video title",
+  "thumbnail_text": "THUMBNAIL TEXT",
+  "language": "en",
+  "voice": "en-US-AndrewMultilingualNeural",
+  "rate": "+0%",
+  "resolution": "720",
+  "format": "16:9",
+  "music_mood": "calm",
+  "music_volume": 0.3,
+  "captions": true,
+  "resume_url": "https://your-n8n/webhook/render-done",
+  "scenes": [
+    {"narration": "voiceover text...", "clips": ["https://cdn.pixabay.com/video/xxx.mp4"]}
+  ]
+}
+```
+
+Bangla: `language: "bn"`, voice `bn-BD-NabanitaNeural` / `bn-BD-PradeepNeural`.
+
+## Optional
+
+- Drop royalty-free music files in `/music` (filename or folder name containing the mood word, e.g. `calm-1.mp3`, is picked when `music_mood` matches)
+- `resolution: "1080"` for 1080p, `format: "9:16"` for Shorts/Reels
