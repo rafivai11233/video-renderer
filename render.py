@@ -402,7 +402,7 @@ def main():
         scene_files.append(f)
 
     # 3b. presenter overlay (influencer / podcast / motivational talking-head)
-    if style in ("presenter", "podcast", "facecam", "cartoon") and AVATARS:
+    if style in ("presenter", "podcast", "facecam", "cartoon", "animation") and AVATARS:
         av_name = str(plan.get("avatar") or ("girl-1" if "girl-1" in AVATARS else sorted(AVATARS)[0]))
         if av_name in AVATARS:
             A = int(W * (0.40 if avatar_mode == "center" else 0.28))
