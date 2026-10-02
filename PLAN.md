@@ -68,20 +68,59 @@ Everything except `scenes` is optional — old v21 plans still work.
 | VOICE / VOICE_A / VOICE_B | Edge-TTS voice overrides |
 | AUDIENCE, RATE, AVATAR | optional extras |
 | STARTED | filled by the workflow - self-heals rows stuck in processing |
-| DOC | link to the auto-created Google Doc (script + SEO pack) |
+| COVERR_KEY | optional - free Coverr API key for extra cinematic clips |
+| UNSPLASH_KEY | optional - free Unsplash API key for extra HD photos |
+| HISTORICAL | optional override: `true`/`false`. Blank = auto-detected from the topic |
+| HF_TOKEN | optional - free Hugging Face token for a 2nd AI image option |
 
-## No-AI-key fallback
+## v23 — multi-source footage (Pexels, Pixabay, Coverr, Wikimedia, Unsplash)
 
-Without `GEMINI_API_KEY` the pipeline still renders good videos: n8n searches
-copyright-free PHOTOS (Pixabay + Pexels) for every scene and sends them in the
-plan; the renderer animates them with Ken Burns motion instead of AI images.
-Characters still appear via the bundled cartoon avatars for podcast styles.
-With the key, AI-generated cartoon scenes take priority automatically.
+Every scene now pulls candidates from FIVE free sources at once and keeps the
+best-scoring, highest-resolution match - this is more reliable than a strict
+try-A-then-B waterfall because one bad/irrelevant hit from the first source
+can no longer "lock in" a wrong clip:
+
+| Source | Type | Key needed | When it helps |
+|---|---|---|---|
+| Pexels | video | free (already set) | cinematic, moody, real-life HD/4K footage - gets a relevance bonus for non-cartoon, non-dialogue styles |
+| Pixabay | video + photo | free (already set) | broad general-purpose stock, used as the baseline |
+| Coverr | video | optional `COVERR_KEY` | exclusive modern cinematic b-roll (free tier: 50 req/hr) - skipped silently with no key |
+| Wikimedia Commons | photo | none, always on | historical/documentary topics (wars, old leaders, pre-1950 events) - gets a big score boost whenever the topic is auto-detected as historical, or `HISTORICAL=true` is set on the row |
+| Unsplash | photo | optional `UNSPLASH_KEY` | extra high-res dramatic photos for the Ken-Burns fallback - skipped silently with no key |
+
+**Historical detection**: the row's PROMPT/TITLE is scanned for words like
+`war`, `history`, `empire`, `revolution`, `independence`, `king`, `emperor`,
+`1947`, `1971`, `ancient`, `medieval`, etc. When matched, Wikimedia Commons
+photos are strongly preferred over generic stock for that video. Set the
+`HISTORICAL` column to `true` or `false` to force it either way.
+
+## No-AI-key fallback (cartoon/animation styles)
+
+The AI image chain is now also free with ZERO keys:
+
+1. **Gemini** ("Nano Banana") - best quality + true character consistency via
+   reference images. Needs `GEMINI_API_KEY`.
+2. **Hugging Face** (FLUX.1-schnell / SDXL) - good quality, needs a free
+   `HF_TOKEN` (set it on the Video settings row or as a repo secret `HF_API_TOKEN`).
+3. **Pollinations.ai** - the guaranteed fallback. 100% free, no key, no account,
+   no payment ever. Used automatically whenever Gemini/HF are unavailable or fail.
+   Character "sameness" across scenes comes from a fixed seed per character
+   description instead of image-conditioning.
+
+Non-cartoon styles (documentary/presenter) that find no stock video for a
+scene now also fall back to a real photo (Wikimedia/Unsplash/Pixabay/Pexels)
+animated with Ken Burns motion, instead of a flat gradient - this is what
+makes historical documentaries (WW1, WW2, old leaders) look good without any
+AI generation at all.
 
 ## Repo secrets needed
 
-- `GEMINI_API_KEY` — required for AI cartoon images (also used by main.py).
+- `GEMINI_API_KEY` — optional, best AI cartoon image quality (also used by main.py).
+- `HF_API_TOKEN` — optional, 2nd-best free AI image quality.
 - `GITHUB_TOKEN` — automatic, nothing to do.
 
-All visuals are copyright-free: AI-generated images, Pixabay/Pexels stock,
-royalty-free music. No logos, no real faces, no copyrighted clips.
+Sheet-level optional keys (set per-row or leave blank): `COVERR_KEY`, `UNSPLASH_KEY`, `HF_TOKEN`.
+
+All visuals stay copyright-free: AI-generated images (Gemini/HuggingFace/Pollinations),
+Pixabay/Pexels/Coverr stock, Wikimedia Commons public-domain archive, Unsplash photos,
+royalty-free music. No logos, no real faces (except public-domain archive), no copyrighted clips.
