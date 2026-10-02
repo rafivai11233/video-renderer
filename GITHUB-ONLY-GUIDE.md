@@ -1,6 +1,8 @@
 # 🎬 GitHub-Only AI Video Pipeline — Super Easy Setup
 
 **Tumar sob kaj: sheet e topic likhe `queued` boshano. Baki sob GitHub kore.**
+
+**Ekdom nijer khonje cholbe:** ei puro pipeline chole GitHub Actions (free, public repo = unlimited) + Google free tier diye. Amar kono token, credit ba server lage NA — ami shudhu ei setup e tomar help korlam. Setup sesh hole ami ar kichu o kori na, tokhon o prottek 3 ghonta video banabe.
 Script → stock media → voice → render → upload → sheet update — 100% free, 100% automatic.
 
 **Video type 5-ta (Sheet er `style` column e likhba):**
@@ -44,14 +46,18 @@ Khali rakhle voice dekhe auto beche ney. Voice chara dile ekdom thik matching vo
 5. **Deploy → Authorize** (tomar Google account → **Advanced → Go to ... (unsafe) → Allow**)
 6. **Web app URL ta copy koro** (`https://script.google.com/macros/s/..../exec`)
 
-### Step 2 — Keys + URL dao (3 minute)
+### Step 2 — GitHub e 3-ta Secret boshao (3 minute, nije)
 
-Ami je form pathiyechhi oi khane 3-ta boshao:
-1. `GEMINI_API_KEY` — aistudio.google.com → Get API key (n8n e ja ase setai)
-2. `PIXABAY_API_KEY` — pixabay.com/api/docs er key
-3. `APPS_SCRIPT_URL` — Step 1 er shesh e je URL copy korle seta
+Repo → **Settings → Secrets and variables → Actions** → **New repository secret** (3 bar koro):
 
-Ami nijei GitHub secrets e boshaba (APPS_SCRIPT_TOKEN already boshano ache).
+| Name | Value |
+|---|---|
+| `GEMINI_API_KEY` | tomar Gemini key (aistudio.google.com → Get API key, AIza... diye shuru) |
+| `PIXABAY_API_KEY` | tomar Pixabay key (pixabay.com/api/docs) |
+| `APPS_SCRIPT_URL` | Step 1 er shesh e je Web app URL copy paibe seta |
+
+`APPS_SCRIPT_TOKEN` **already boshano ache** — oitar kono kaj korte hobe na.
+(Ami jodi form pathiye thaki, oita ar lagbe NA — kichu boshate hobe na, skip koro.)
 
 ### Step 3 — pipeline.yml paste (1 minute)
 
