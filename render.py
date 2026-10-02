@@ -450,21 +450,25 @@ def circle_avatar(src, size, out):
        "-frames:v", "1", out)
 
 
-def presenter_overlay(scene, avatar_png, x, y, out, quality=True):
+def presenter_overlay(scene, avatar_png, x, y, out, quality=True, dur=None):
     """Composite one circular avatar over a rendered scene video."""
-    ff("-i", scene, "-loop", "1", "-i", avatar_png,
+    # IMPORTANT: cap the looped image input with -t, otherwise the encode
+    # never terminates (the video stream ends but the looped png keeps feeding)
+    loop_args = ["-loop", "1"] + (["-t", f"{dur:.3f}"] if dur else []) + ["-i", avatar_png]
+    ff("-i", scene, *loop_args,
        "-filter_complex", f"[1:v]format=rgba[av];[0:v][av]overlay={x}:{y}:shortest=1[v]",
        "-map", "[v]", "-an", "-c:v", "libx264", "-preset", "fast" if quality else "superfast",
        "-crf", "18", "-pix_fmt", "yuv420p", out)
 
 
-def podcast_overlay(scene, avatar_a, avatar_b, out, W, H, quality=True):
+def podcast_overlay(scene, avatar_a, avatar_b, out, W, H, quality=True, dur=None):
     """Two circular characters, bottom-left and bottom-right (podcast / talk show)."""
     A = int(W * 0.26)
     y = H - A - int(H * 0.05)
     xA = int(W * 0.05)
     xB = W - A - int(W * 0.05)
-    ff("-i", scene, "-loop", "1", "-i", avatar_a, "-loop", "1", "-i", avatar_b,
+    t = ["-t", f"{dur:.3f}"] if dur else []
+    ff("-i", scene, "-loop", "1", *t, "-i", avatar_a, "-loop", "1", *t, "-i", avatar_b,
        "-filter_complex",
        f"[1:v]scale={A}:{A},format=rgba[a1];"
        f"[2:v]scale={A}:{A},format=rgba[a2];"
@@ -839,7 +843,8 @@ def main():
                 overlay_files = []
                 for i, sf in enumerate(scene_files):
                     po = WORK / f"pscene{i:03d}.mp4"
-                    podcast_overlay(sf, a_png, b_png, po, W, H, quality)
+                    podcast_overlay(sf, a_png, b_png, po, W, H, quality,
+                                    dur=slots[i] / FPS + 1)
                     overlay_files.append(po)
                 scene_files = overlay_files
                 print(f"podcast overlay: {names[0]} + {names[1]}", flush=True)
@@ -862,7 +867,8 @@ def main():
                 overlay_files = []
                 for i, sf in enumerate(scene_files):
                     po = WORK / f"pscene{i:03d}.mp4"
-                    presenter_overlay(sf, circ, x, y, po, quality)
+                    presenter_overlay(sf, circ, x, y, po, quality,
+                                      dur=slots[i] / FPS + 1)
                     overlay_files.append(po)
                 scene_files = overlay_files
                 print(f"presenter overlay: {av_name} mode={avatar_mode} size={A}px", flush=True)
