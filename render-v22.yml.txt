@@ -1,0 +1,70 @@
+name: render
+# run-name makes the run easy to find in the Actions tab
+run-name: render ${{ inputs.job_id }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      job_id:
+        description: "Job id (also used as the release tag)"
+        required: true
+      plan:
+        description: "Video plan JSON from n8n"
+        required: true
+
+permissions:
+  contents: write   # needed to create the release
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    # v22: long 10-minute 1080p cartoon renders need way more than 2 hours
+    timeout-minutes: 330
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install ffmpeg, fonts, python libs
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq ffmpeg fontconfig fonts-noto-core fonts-noto-ui-core
+          pip install -q edge-tts requests
+
+      - name: Write plan
+        env:
+          PLAN: ${{ inputs.plan }}
+        run: printf '%s' "$PLAN" > plan.json
+
+      - name: Render video
+        env:
+          # used by render.py for AI cartoon images (Nano Banana) - set this secret once
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python render.py
+
+      - name: Publish release (video + thumbnail)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          JOB_ID: ${{ inputs.job_id }}
+        run: |
+          ls -la out/
+          gh release create "$JOB_ID" out/final.mp4 out/thumbnail.jpg \
+            --title "$JOB_ID" --notes "Automated render"
+          # keep only the newest 20 releases
+          gh release list --limit 100 --json tagName --jq '.[20:][].tagName' \
+            | xargs -r -n1 gh release delete --cleanup-tag -y
+
+      # Always tell n8n how it ended, so the workflow never waits forever
+      - name: Notify n8n
+        if: always()
+        env:
+          RESUME_URL: ${{ fromJSON(inputs.plan).resume_url }}
+          STATUS: ${{ job.status }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          curl -sS -X POST -H 'Content-Type: application/json' \
+            -d "{\"status\":\"$STATUS\",\"run_url\":\"$RUN_URL\"}" \
+            "$RESUME_URL" || true
