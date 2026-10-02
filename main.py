@@ -2,19 +2,19 @@
 """
 Full automated video pipeline - runs 100% on GitHub Actions, no n8n.
 
-Flow: Google Sheet (queued topics) -> Gemini script -> Pixabay clips
-      -> plan.json -> render.py (Edge TTS + ffmpeg + music + captions
-      + presenter avatars + thumbnail) -> GitHub Release -> Sheet update.
+Flow: Google Sheet (via Apps Script bridge) -> Gemini script -> Pixabay clips
+      -> plan.json -> render.py (Edge TTS + ffmpeg + music + captions +
+      presenter/cartoon avatars + thumbnail) -> GitHub Release -> Sheet update.
 
-One run makes MULTIPLE videos (up to PIPELINE_MAX_VIDEOS or the time
-budget), so a long queue drains fast. Repo is public => unlimited minutes.
+One run makes MULTIPLE videos (up to PIPELINE_MAX_VIDEOS or the time budget).
+Repo is public => unlimited Actions minutes.
 
 Required environment (GitHub Secrets):
-  GEMINI_API_KEY    - Google AI Studio key (AIza...)
-  PIXABAY_API_KEY   - pixabay.com/api/docs key
-  GOOGLE_SA_JSON    - full Google service-account JSON (sheet editor)
-  SHEET_ID          - optional, falls back to built-in default
-  GH_TOKEN          - provided by Actions (no secret needed)
+  GEMINI_API_KEY     - Google AI Studio key (AIza...)
+  PIXABAY_API_KEY    - pixabay.com/api/docs key
+  APPS_SCRIPT_URL    - deployed Apps Script Web App URL (from the Sheet)
+  APPS_SCRIPT_TOKEN  - bridge token (already set)
+  GH_TOKEN           - provided by Actions (no secret needed)
 """
 import json
 import os
@@ -32,17 +32,15 @@ SHEET_ID = os.environ.get("SHEET_ID", "1HwesVw1hGORWq09wWUC_1e3oKgFES85E9vCzr8kk
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "")
 PIXABAY_KEY = os.environ.get("PIXABAY_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
+SCRIPT_URL = os.environ.get("APPS_SCRIPT_URL", "").strip()
+SCRIPT_TOKEN = os.environ.get("APPS_SCRIPT_TOKEN", "").strip()
 REPO = "rafivai11233/video-renderer"
 
 MAX_VIDEOS = int(os.environ.get("PIPELINE_MAX_VIDEOS", "5"))       # per run
-BUDGET_MIN = float(os.environ.get("PIPELINE_BUDGET_MIN", "50"))    # per run
+BUDGET_MIN = float(os.environ.get("PIPELINE_BUDGET_MIN", "50"))     # per run
 MAX_CONSECUTIVE_FAILURES = 2
 
-# Sheet columns: A topic | B language | C voice | D status | E job_id
-#   F video_url | G thumb_url | H release_url | I error | J style | K avatar
-COL = {"topic": 1, "language": 2, "voice": 3, "status": 4, "job_id": 5,
-       "video_url": 6, "thumb_url": 7, "release_url": 8, "error": 9,
-       "style": 10, "avatar": 11}
+STYLES = ("documentary", "presenter", "podcast", "cartoon", "animation")
 
 
 # --------------------------------------------------------------- small utils
@@ -61,58 +59,62 @@ def extract_json(text):
     return json.loads(m.group(0))
 
 
-def rowval(row, name):
-    i = COL[name] - 1
-    return row[i].strip() if len(row) > i and row[i] else ""
-
-
 # -------------------------------------------------------------------- sheet
-def open_sheet():
-    import gspread  # noqa: late import keeps selftest light
-    from google.oauth2.service_account import Credentials
-    info = json.loads(os.environ["GOOGLE_SA_JSON"])
-    creds = Credentials.from_service_account_info(info, scopes=[
-        "https://www.googleapis.com/auth/spreadsheets"])
-    gc = gspread.authorize(creds)
-    return gc.open_by_key(SHEET_ID).worksheet("Topics")
+def sheet_call(params, timeout=60):
+    q = {"token": SCRIPT_TOKEN}
+    q.update(params)
+    r = requests.get(SCRIPT_URL, params=q, timeout=timeout)
+    r.raise_for_status()
+    return r.json()
 
 
-def pick_topic(sh):
-    """Return (row_number, row) of the first queued row, else (None, None)."""
-    for i, row in enumerate(sh.get_all_values()[1:], start=2):
-        if not row or not row[0].strip():
-            continue
-        status = rowval(row, "status").lower()
-        if status in ("", "queued"):
-            return i, row
-    return None, None
+def pick_topic():
+    """First queued row -> dict(row, topic, language, voice, style, avatar), or None."""
+    d = sheet_call({"action": "read"})
+    if not d.get("ok"):
+        raise RuntimeError(f"sheet read failed: {d.get('error')}")
+    if d.get("empty"):
+        return None
+    return d
 
 
-def cell(sh, row, name, value):
-    sh.update_cell(row, COL[name], value)
+def sheet_update(row, **fields):
+    p = {"action": "update", "row": row}
+    p.update(fields)
+    d = sheet_call(p)
+    if not d.get("ok"):
+        raise RuntimeError(f"sheet update failed: {d.get('error')}")
 
 
 # ------------------------------------------------------------------- gemini
 def gemini_script(topic, language, style):
-    presenter = style in ("presenter", "podcast")
     if language == "bn":
         lang_rule = "Write the title, thumbnail text and ALL narration in Bengali (bangla script)."
-        voice_note = "The tone is a warm, direct Bangla speech."
     else:
         lang_rule = "Write everything in English."
-        voice_note = "The tone is a warm, direct speech."
-    if presenter:
-        style_rule = ("This is a TALKING-HEAD presenter video (facecam/podcast style). "
-                      "Write it as a passionate first-person motivational speech, "
-                      "as if the speaker is talking directly to the camera.")
-    else:
-        style_rule = ("This is a documentary-style voiceover video. "
-                      "Write it as an engaging documentary narration.")
+
+    style_rules = {
+        "documentary": ("This is a documentary-style voiceover video. "
+                        "Write an engaging documentary narration."),
+        "presenter": ("This is a TALKING-HEAD presenter video (facecam style). "
+                      "Write a passionate first-person motivational speech, "
+                      "talking directly to the camera."),
+        "podcast": ("This is a PODCAST-style video. Write it as a warm, "
+                    "reflective first-person monologue, like a podcast episode."),
+        "cartoon": ("This is a FUNNY CARTOON STORY video (Gopal Bhar / folk-tale "
+                    "humor style). Write a hilarious story narration with comic "
+                    "timing, funny reactions, and a light lesson at the end. "
+                    "Make it feel like a cartoon character telling the story."),
+        "animation": ("This is a modern 3D/animated explainer video. Write crisp, "
+                      "energetic, visually-driven narration."),
+    }
+    style_rule = style_rules.get(style, style_rules["documentary"])
+    if style == "cartoon":
+        lang_rule += " Funny dialogues welcome."
 
     prompt = f"""Create a ~12-14 minute YouTube video script about: "{topic}"
 {lang_rule}
 {style_rule}
-{voice_note}
 Return ONLY valid JSON, exactly this shape:
 {{
   "title": "SEO friendly title under 90 chars",
@@ -146,49 +148,45 @@ Rules:
 
 
 # ------------------------------------------------------------------ pixabay
-def pixabay_clips(keywords, want=3):
-    """Return up to `want` stock media URLs for one scene: videos first, images as fallback."""
+def pixabay_clips(keywords, want=3, style="documentary"):
+    """Up to `want` stock media URLs: videos first, images as fallback.
+    cartoon/animation styles bias searches toward animated content."""
     urls = []
     if not PIXABAY_KEY:
         return urls
-    for kw in keywords[:3]:
-        kw = kw.strip()
-        if not kw:
-            continue
-        try:
-            r = requests.get(
-                "https://pixabay.com/api/videos/",
-                params={"key": PIXABAY_KEY, "q": kw, "per_page": 5, "safe_search": "true"},
-                timeout=30)
-            r.raise_for_status()
-            for hit in r.json().get("hits", []):
-                v = hit.get("videos", {})
-                url = (v.get("large") or v.get("medium") or v.get("tiny") or {}).get("url")
-                if url and url not in urls:
-                    urls.append(url)
-                    break
-        except Exception as e:  # noqa: BLE001 - a bad keyword must never kill the run
-            print(f"pixabay video search failed for '{kw}': {e}", flush=True)
-        if len(urls) >= want:
-            return urls[:want]
-    # fallback: images
-    for kw in keywords[:2]:
-        try:
-            r = requests.get(
-                "https://pixabay.com/api/",
-                params={"key": PIXABAY_KEY, "q": kw, "per_page": 5,
-                        "image_type": "photo", "safe_search": "true"},
-                timeout=30)
-            r.raise_for_status()
-            for hit in r.json().get("hits", []):
-                url = hit.get("largeImageURL")
-                if url and url not in urls:
-                    urls.append(url)
-                    break
-        except Exception as e:  # noqa: BLE001
-            print(f"pixabay image search failed for '{kw}': {e}", flush=True)
-        if len(urls) >= want:
-            break
+    kws = [k.strip() for k in keywords if k and k.strip()][:3]
+    if style == "cartoon":
+        kws = [f"cartoon {k}" for k in kws] or ["cartoon animation"]
+    elif style == "animation":
+        kws = [f"3d animation {k}" for k in kws] or ["3d animation abstract"]
+
+    def search(endpoint, extra, kws):
+        for kw in kws[:3]:
+            try:
+                r = requests.get(
+                    f"https://pixabay.com/api/{endpoint}",
+                    params={"key": PIXABAY_KEY, "q": kw, "per_page": 5,
+                            "safe_search": "true", **extra},
+                    timeout=30)
+                r.raise_for_status()
+                for hit in r.json().get("hits", []):
+                    if endpoint == "videos/":
+                        v = hit.get("videos", {})
+                        url = (v.get("large") or v.get("medium") or v.get("tiny") or {}).get("url")
+                    else:
+                        url = hit.get("largeImageURL")
+                    if url and url not in urls:
+                        urls.append(url)
+                        break
+            except Exception as e:  # noqa: BLE001 - bad keyword never kills the run
+                print(f"pixabay failed for '{kw}': {e}", flush=True)
+            if len(urls) >= want:
+                return
+        return
+
+    search("videos/", {}, kws)
+    if len(urls) < want:
+        search("", {"image_type": "photo"}, kws[:2])
     return urls[:want]
 
 
@@ -217,22 +215,29 @@ def release_urls(job_id):
 
 
 # --------------------------------------------------------------------- plan
-def build_plan(job_id, row, script, scenes):
-    topic = rowval(row, "topic")
-    language = (rowval(row, "language") or "en")[:2].lower()
-    voice = rowval(row, "voice")
-    style = (rowval(row, "style") or "documentary").lower()
-    avatar = rowval(row, "avatar")
-    presenter = style in ("presenter", "podcast")
+def build_plan(job_id, topic, language, voice, style, avatar, script, scenes):
+    language = (language or "en")[:2].lower()
+    style = (style or "documentary").lower()
+    if style not in STYLES:
+        style = "documentary"
+    presenter = style in ("presenter", "podcast", "cartoon")
 
     if not voice:
-        if presenter:
-            voice = "bn-BD-NabanitaNeural" if language == "bn" else "en-US-AvaMultilingualNeural"
-        else:
-            voice = "bn-BD-NabanitaNeural" if language == "bn" else "en-US-AndrewMultilingualNeural"
-    if presenter and not avatar:
+        voice = {"cartoon": {"en": "en-US-JennyNeural", "bn": "bn-BD-NabanitaNeural"},
+                 "presenter": {"en": "en-US-AvaMultilingualNeural", "bn": "bn-BD-NabanitaNeural"},
+                 "podcast": {"en": "en-US-AvaMultilingualNeural", "bn": "bn-BD-NabanitaNeural"},
+                 "animation": {"en": "en-US-AndrewMultilingualNeural", "bn": "bn-BD-NabanitaNeural"},
+                 }.get(style, {}).get(language, "en-US-AndrewMultilingualNeural" if language == "en" else "bn-BD-NabanitaNeural")
+
+    if not avatar:
         v = voice.lower()
-        avatar = "boy-1" if ("andrew" in v or "christopher" in v or "pradeep" in v) else "girl-1"
+        male = ("andrew" in v or "christopher" in v or "pradeep" in v)
+        if style == "cartoon":
+            avatar = "cartoon-boy-1" if male else "cartoon-girl-1"
+        elif presenter:
+            avatar = "boy-1" if male else "girl-1"
+    if not presenter:
+        avatar = ""
 
     plan = {
         "job_id": job_id,
@@ -244,9 +249,9 @@ def build_plan(job_id, row, script, scenes):
         "resolution": "720",
         "format": "16:9",
         "style": style,
-        "avatar": avatar if presenter else "",
-        "avatar_mode": "center" if style == "podcast" else "corner",
-        "music_mood": script.get("music_mood") or "calm",
+        "avatar": avatar,
+        "avatar_mode": "center" if style in ("podcast", "cartoon") else "corner",
+        "music_mood": script.get("music_mood") or ("energetic" if style in ("cartoon", "animation") else "calm"),
         "music_volume": 0.3,
         "captions": True,
         "resume_url": "",
@@ -256,23 +261,26 @@ def build_plan(job_id, row, script, scenes):
 
 
 # ------------------------------------------------------------------- engine
-def make_video(sh):
+def make_video():
     """Render ONE queued topic. Returns 'done', 'failed' or 'empty'."""
-    row_i, row = pick_topic(sh)
-    if row_i is None:
+    t = pick_topic()
+    if t is None:
         return "empty"
 
-    topic = rowval(row, "topic")
+    topic = t["topic"]
+    row = t["row"]
+    language = (t.get("language") or "en")[:2].lower()
+    style = (t.get("style") or "documentary").lower()
+    if style not in STYLES:
+        style = "documentary"
+    avatar = t.get("avatar") or ""
+    voice = t.get("voice") or ""
+
     job_id = f"{slugify(topic)}-{int(time.time())}"
-    print(f"\n=== next topic (row {row_i}): {topic}\njob_id: {job_id}", flush=True)
-    cell(sh, row_i, "status", "rendering")
-    cell(sh, row_i, "job_id", job_id)
-    cell(sh, row_i, "error", "")
+    print(f"\n=== next topic (row {row}): {topic}\njob_id: {job_id}", flush=True)
+    sheet_update(row, status="rendering", job_id=job_id, error="")
 
     try:
-        style = (rowval(row, "style") or "documentary").lower()
-        language = (rowval(row, "language") or "en")[:2].lower()
-
         print("Gemini: writing script...", flush=True)
         script = gemini_script(topic, language, style)
         print(f"Gemini: {len(script.get('scenes', []))} scenes, mood={script.get('music_mood')}", flush=True)
@@ -280,12 +288,12 @@ def make_video(sh):
         scenes = []
         for idx, s in enumerate(script["scenes"]):
             clips = []
-            if style == "documentary":
-                clips = pixabay_clips(s.get("clip_keywords", []))
+            if style in ("documentary", "cartoon", "animation"):
+                clips = pixabay_clips(s.get("clip_keywords", []), style=style)
             scenes.append({"narration": s["narration"], "clips": clips})
             print(f"scene {idx + 1}: {len(s['narration'].split())} words, {len(clips)} clips", flush=True)
 
-        plan = build_plan(job_id, row, script, scenes)
+        plan = build_plan(job_id, topic, language, voice, style, avatar, script, scenes)
         Path("plan.json").write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
         print(f"plan.json written (style={plan['style']}, voice={plan['voice']}, avatar={plan['avatar']})", flush=True)
 
@@ -297,25 +305,21 @@ def make_video(sh):
         video_url, thumb_url = release_urls(job_id)
         release_url = f"https://github.com/{REPO}/releases/tag/{job_id}"
 
-        cell(sh, row_i, "status", "done")
-        cell(sh, row_i, "video_url", video_url)
-        cell(sh, row_i, "thumb_url", thumb_url)
-        cell(sh, row_i, "release_url", release_url)
+        sheet_update(row, status="done", video_url=video_url,
+                     thumb_url=thumb_url, release_url=release_url)
         print(f"DONE: {job_id}\nvideo: {video_url}", flush=True)
         return "done"
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
-        cell(sh, row_i, "status", "failed")
-        cell(sh, row_i, "error", str(e)[:200])
+        sheet_update(row, status="failed", error=str(e)[:200])
         return "failed"
 
 
 def run_pipeline():
-    sh = open_sheet()
     made, failed_streak = 0, 0
     start = time.time()
     while made < MAX_VIDEOS and (time.time() - start) < BUDGET_MIN * 60:
-        result = make_video(sh)
+        result = make_video()
         if result == "empty":
             print("Queue is empty - nothing more to do.", flush=True)
             break
@@ -325,10 +329,9 @@ def run_pipeline():
         else:
             failed_streak += 1
             if failed_streak >= MAX_CONSECUTIVE_FAILURES:
-                print(f"{failed_streak} failures in a row - stopping "
-                      "(check the sheet's error column / Actions log).", flush=True)
+                print(f"{failed_streak} failures in a row - stopping.", flush=True)
                 return 1
-    print(f"run finished: {made} video(s) made in {(time.time() - start) / 60:.1f} min", flush=True)
+    print(f"run finished: {made} video(s) in {(time.time() - start) / 60:.1f} min", flush=True)
     return 0 if made or failed_streak == 0 else 1
 
 
@@ -336,20 +339,20 @@ def run_pipeline():
 def run_selftest():
     """Local test: fake script (no Gemini/Pixabay/Sheet/Release), full render."""
     script = {
-        "title": "Selftest Presenter Video",
+        "title": "Selftest Cartoon",
         "thumbnail_text": "SELFTEST OK",
         "music_mood": "energetic",
         "scenes": [
-            {"narration": "This is a local self test of the full pipeline. The avatar, the voice, the music and the captions all render together in one pass. If you can hear this and see me talking, everything works.",
+            {"narration": "This is a local self test of the cartoon pipeline. The funny cartoon avatar, the comic captions, the voice and the music all render together in one pass.",
              "clip_keywords": []},
-            {"narration": "This second scene proves that crossfades, music ducking and subtitle timing all still work when the pipeline is driven by main point python instead of n8n.",
+            {"narration": "This second scene proves that bright cartoon backgrounds, crossfades and subtitle timing still work when the pipeline runs on GitHub Actions.",
              "clip_keywords": []},
         ],
     }
-    row = ["Selftest", "en", "en-US-AvaMultilingualNeural", "", "", "", "", "", "", "podcast", "boy-1"]
-    plan = build_plan("selftest-local", row, script, script["scenes"])
+    plan = build_plan("selftest-local", "Selftest", "en", "", "cartoon", "cartoon-boy-1",
+                      script, script["scenes"])
     Path("plan.json").write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
-    print(f"selftest plan: style={plan['style']} voice={plan['voice']} avatar={plan['avatar']} scenes={len(plan['scenes'])}", flush=True)
+    print(f"selftest plan: style={plan['style']} voice={plan['voice']} avatar={plan['avatar']}", flush=True)
     subprocess.run([sys.executable, "render.py"], check=True)
     out = Path("out/final.mp4")
     print(f"SELFTEST OK -> {out} ({out.stat().st_size / 1e6:.1f} MB)")
