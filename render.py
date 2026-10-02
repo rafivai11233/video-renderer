@@ -42,6 +42,9 @@ OUT = Path("out")
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
 IMAGE_MODELS = [os.environ.get("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image"),
                 "gemini-2.5-flash-image-preview"]
+HF_TOKEN = os.environ.get("HF_API_TOKEN", "").strip()
+HF_IMAGE_MODELS = ["black-forest-labs/FLUX.1-schnell", "stabilityai/stable-diffusion-xl-base-1.0"]
+POLLINATIONS_MODELS = ["flux", "turbo"]   # always free, no key, no account needed
 
 # Presenter avatars (AI-generated, royalty-free) - png files in /avatars
 AVATARS = {}
@@ -249,6 +252,65 @@ async def voice_repair(broken, scenes, voice, voice_a, voice_b, rate, dialogue):
 
 
 # ------------------------------------------------------------- AI images
+def pollinations_image(prompt, out_png, seed=None, tries=3):
+    """Free, no-key AI image generation via Pollinations.ai (Flux/Turbo).
+    This is the guaranteed fallback - always works, no account, no cost."""
+    import urllib.parse
+    seed = seed if seed is not None else random.randint(1, 999999)
+    for model in POLLINATIONS_MODELS:
+        url = "https://image.pollinations.ai/prompt/" + urllib.parse.quote(prompt[:900])
+        for attempt in range(tries):
+            try:
+                r = requests.get(url, params={
+                    "width": 1280, "height": 720, "nologo": "true",
+                    "seed": seed, "model": model, "enhance": "true"}, timeout=90)
+                if r.status_code == 200 and r.content[:3] in (b"\xff\xd8\xff", b"\x89PN"):
+                    Path(out_png).write_bytes(r.content)
+                    return True
+                time.sleep(6 + attempt * 6)
+            except Exception as e:  # noqa: BLE001
+                print(f"pollinations retry {attempt} ({model}): {e}", flush=True)
+                time.sleep(6 + attempt * 6)
+    print("Pollinations image failed after retries - using motion/photo fallback", flush=True)
+    return False
+
+
+def huggingface_image(prompt, out_png, tries=2):
+    """Optional higher-quality free image via Hugging Face Inference API
+    (needs a free HF_API_TOKEN). Skipped silently if no token is set."""
+    if not HF_TOKEN:
+        return False
+    for model in HF_IMAGE_MODELS:
+        for attempt in range(tries):
+            try:
+                r = requests.post(
+                    f"https://api-inference.huggingface.co/models/{model}",
+                    headers={"Authorization": f"Bearer {HF_TOKEN}"},
+                    json={"inputs": prompt[:900], "options": {"wait_for_model": True}},
+                    timeout=90)
+                if r.status_code == 200 and r.headers.get("content-type", "").startswith("image/"):
+                    Path(out_png).write_bytes(r.content)
+                    return True
+                if r.status_code in (503, 429):
+                    time.sleep(15 + attempt * 15)
+                    continue
+                break   # model unavailable/4xx - try next model
+            except Exception as e:  # noqa: BLE001
+                print(f"huggingface retry {attempt} ({model}): {e}", flush=True)
+                time.sleep(10)
+    return False
+
+
+def ai_image(prompt, ref_pngs, out_png, seed=None):
+    """Best-available free AI image: Gemini (consistent chars, needs key) ->
+    Hugging Face (needs free token) -> Pollinations (always free, no key)."""
+    if GEMINI_KEY and gemini_image(prompt, ref_pngs, out_png):
+        return True
+    if huggingface_image(prompt, out_png):
+        return True
+    return pollinations_image(prompt, out_png, seed=seed)
+
+
 def gemini_image(prompt, ref_pngs, out_png, tries=3):
     """Generate one image with the Gemini image model ('Nano Banana').
     ref_pngs keeps characters consistent across scenes. Returns True/False."""
@@ -299,7 +361,9 @@ def gemini_image(prompt, ref_pngs, out_png, tries=3):
 
 
 def build_character_refs(plan):
-    """Character portrait refs -> work/char_0.png, work/char_1.png"""
+    """Character portrait refs -> work/char_0.png, work/char_1.png.
+    Reference images only help the Gemini path keep faces consistent; the
+    Pollinations/HuggingFace paths reuse a fixed seed per character instead."""
     chars = [c for c in plan.get("characters", []) if c.get("desc") or c.get("name")]
     refs = []
     for k, c in enumerate(chars[:2]):
@@ -308,17 +372,16 @@ def build_character_refs(plan):
                   f"{c.get('desc', '')}. Chest up, centered, facing viewer. "
                   "Bright colorful 2D TV cartoon style, clean bold outlines, flat colors "
                   "with soft shading, expressive face, simple plain background. No text.")
-        if gemini_image(prompt, [], out):
+        seed = (abs(hash(c.get("name", "") + c.get("desc", ""))) % 900000) + 1
+        if ai_image(prompt, [], out, seed=seed):
             refs.append(out)
-        time.sleep(4)
+        time.sleep(2)
     return refs
 
 
 def build_scene_images(plan, refs):
-    """One AI image per scene (up to plan.image_max), consistent characters."""
-    if not GEMINI_KEY:
-        print("GEMINI_API_KEY missing - skipping AI scene images", flush=True)
-        return {}
+    """One AI image per scene (up to plan.image_max), consistent characters.
+    Always available even with no API key at all (Pollinations.ai fallback)."""
     scenes = plan["scenes"]
     style = str(plan.get("style", "documentary")).lower()
     style_line = {"cartoon": CARTOON_STYLE_LINE,
@@ -327,6 +390,7 @@ def build_scene_images(plan, refs):
                   "podcast": PODCAST_STYLE_LINE}.get(style, CARTOON_STYLE_LINE)
     chars = [c for c in plan.get("characters", []) if c.get("name")]
     char_desc = "; ".join(f"{c.get('name')}: {c.get('desc', '')}" for c in chars[:2])
+    char_seed = (abs(hash(char_desc)) % 900000) + 1 if char_desc else None
     img_max = int(plan.get("image_max", 14))
     images = {}
     made = 0
@@ -335,19 +399,20 @@ def build_scene_images(plan, refs):
         if not ip or made >= img_max:
             continue
         prompt = (f"{style_line}\n"
-                  + (f"Main characters (use the EXACT same design as the reference image): {char_desc}\n"
+                  + (f"Main characters (keep the SAME look as described): {char_desc}\n"
                      if char_desc else "")
                   + f"Scene: {ip}\n"
-                  "Same character design as the reference image(s). "
+                  "Consistent character design across scenes. "
                   "No text, no watermark, no logo.")
         out = WORK / f"img{i:03d}.png"
-        if gemini_image(prompt, refs, out):
+        if ai_image(prompt, refs, out, seed=char_seed):
             images[i] = out
             made += 1
             if made % 5 == 0:
                 print(f"AI images: {made}/{min(img_max, len(scenes))}", flush=True)
-        time.sleep(8)          # be gentle with the free-tier rate limit
-    print(f"AI scene images: {len(images)} generated", flush=True)
+        time.sleep(2 if not GEMINI_KEY else 8)   # Gemini free tier needs gentler pacing
+    print(f"AI scene images: {len(images)} generated "
+          f"({'Gemini' if GEMINI_KEY else ('HuggingFace' if HF_TOKEN else 'Pollinations')} path)", flush=True)
     return images
 
 
