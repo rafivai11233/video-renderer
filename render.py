@@ -80,17 +80,45 @@ def dims(plan):
 
 
 # --------------------------------------------------------------------- TTS
-async def tts_one(text, voice, rate, out):
+def _voice_fallback(voice):
+    """A safe backup voice in the same language if the requested one is wrong."""
+    v = str(voice).lower()
+    if v.startswith("bn"):
+        return "bn-BD-NabanitaNeural"
+    if v.startswith("hi"):
+        return "hi-IN-SwaraNeural"
+    return "en-US-AndrewMultilingualNeural"
+
+
+async def tts_one(text, voice, rate, out, fallback=None):
     import edge_tts
+    bad_voice = False
     for attempt in range(5):
         try:
             await edge_tts.Communicate(text, voice, rate=rate).save(str(out))
             if Path(out).exists() and Path(out).stat().st_size > 2000:
                 return
-        except Exception as e:  # network / throttling
+        except Exception as e:  # network / throttling / bad voice
+            msg = str(e).lower()
+            if "voice" in msg or "no audio" in msg or "404" in msg:
+                # wrong voice name - retrying the same one can never work
+                bad_voice = True
+                break
             print("TTS retry", attempt, repr(e), flush=True)
         await asyncio.sleep(2 + attempt * 3)
-    raise RuntimeError(f"TTS failed: {out}")
+    if bad_voice and fallback and fallback != voice:
+        print(f"WARNING: voice '{voice}' is invalid - falling back to '{fallback}'", flush=True)
+        for attempt in range(2):
+            try:
+                await edge_tts.Communicate(text, fallback, rate=rate).save(str(out))
+                if Path(out).exists() and Path(out).stat().st_size > 2000:
+                    return
+            except Exception as e:  # noqa: BLE001
+                print("fallback retry", attempt, repr(e), flush=True)
+            await asyncio.sleep(2)
+    raise RuntimeError(
+        f"TTS failed for {out} - voice '{voice}' "
+        f"({'invalid voice name' if bad_voice else 'network error'})")
 
 
 async def tts_all(scenes, voice, rate):
@@ -98,7 +126,8 @@ async def tts_all(scenes, voice, rate):
 
     async def one(i, s):
         async with sem:
-            await tts_one(s["narration"], voice, rate, WORK / f"v{i:03d}.mp3")
+            await tts_one(s["narration"], voice, rate, WORK / f"v{i:03d}.mp3",
+                          fallback=_voice_fallback(voice))
 
     await asyncio.gather(*(one(i, s) for i, s in enumerate(scenes)))
 
