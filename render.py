@@ -680,7 +680,12 @@ def make_thumbnail(video, text, lang, out, W, H):
 
 # -------------------------------------------------------------------- main
 def main():
+    global GEMINI_KEY
     plan = json.load(open("plan.json", encoding="utf-8"))
+    if not GEMINI_KEY and plan.get("gemini_key"):
+        # advanced fallback: key passed inside the plan (WARNING: visible in
+        # the public Actions run inputs - prefer the GEMINI_API_KEY secret)
+        GEMINI_KEY = str(plan["gemini_key"]).strip()
     random.seed(plan.get("job_id", "x"))
     WORK.mkdir(exist_ok=True)
     (WORK / "clips").mkdir(exist_ok=True)
