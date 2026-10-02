@@ -764,12 +764,14 @@ def make_thumbnail(video, text, lang, out, W, H):
 
 # -------------------------------------------------------------------- main
 def main():
-    global GEMINI_KEY
+    global GEMINI_KEY, HF_TOKEN
     plan = json.load(open("plan.json", encoding="utf-8"))
     if not GEMINI_KEY and plan.get("gemini_key"):
         # advanced fallback: key passed inside the plan (WARNING: visible in
         # the public Actions run inputs - prefer the GEMINI_API_KEY secret)
         GEMINI_KEY = str(plan["gemini_key"]).strip()
+    if not HF_TOKEN and plan.get("hf_token"):
+        HF_TOKEN = str(plan["hf_token"]).strip()
     random.seed(plan.get("job_id", "x"))
     WORK.mkdir(exist_ok=True)
     (WORK / "clips").mkdir(exist_ok=True)
@@ -906,14 +908,21 @@ def main():
         frames = slots[i] + (XF_FRAMES if i < n - 1 else 0)
         f = WORK / f"scene{i:03d}.mp4"
         img = images.get(i)
-        if img is None and is_cartoonish(style) and photo_by_scene:
-            img = photo_by_scene.get(i)                # no AI key: free photo + motion
         if img is None and is_cartoonish(style) and img_pool:
             img = img_pool[i % len(img_pool)]          # reuse with different motion
+        # photo + Ken Burns fallback: used whenever there is no clip for this
+        # scene, for ANY style - this is what covers historical/documentary
+        # topics (Wikimedia Commons archive photos) as well as no-AI-key cartoons
+        if img is None and not clips and photo_by_scene.get(i):
+            img = photo_by_scene[i]
         if img is not None:
             image_scene(img, frames, f, W, H, i, quality)
         elif clips:
             make_scene(clips, frames, f, W, H, bg_blur, C0, C1, quality)
+        elif photo_by_scene:
+            # no clip for this scene and no photo of its own - borrow one
+            any_photo = next(iter(photo_by_scene.values()))
+            image_scene(any_photo, frames, f, W, H, i, quality)
         elif pool:
             make_scene(random.sample(pool, min(2, len(pool))), frames, f, W, H,
                        bg_blur, C0, C1, quality)
