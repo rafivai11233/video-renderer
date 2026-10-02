@@ -41,6 +41,8 @@ BUDGET_MIN = float(os.environ.get("PIPELINE_BUDGET_MIN", "50"))     # per run
 MAX_CONSECUTIVE_FAILURES = 2
 
 STYLES = ("documentary", "presenter", "podcast", "cartoon", "animation")
+VALID_AVATARS = ("girl-1", "boy-1", "cartoon-boy-1", "cartoon-girl-1",
+                 "robot-1", "grandpa-1", "kid-boy-1", "bizman-1")
 
 
 # --------------------------------------------------------------- small utils
@@ -229,14 +231,22 @@ def build_plan(job_id, topic, language, voice, style, avatar, script, scenes):
                  "animation": {"en": "en-US-AndrewMultilingualNeural", "bn": "bn-BD-NabanitaNeural"},
                  }.get(style, {}).get(language, "en-US-AndrewMultilingualNeural" if language == "en" else "bn-BD-NabanitaNeural")
 
+    if avatar and avatar not in VALID_AVATARS:
+        print(f"unknown avatar '{avatar}' - ignoring", flush=True)
+        avatar = ""
     if not avatar:
         v = voice.lower()
         male = ("andrew" in v or "christopher" in v or "pradeep" in v)
         if style == "cartoon":
             avatar = "cartoon-boy-1" if male else "cartoon-girl-1"
+        elif style == "animation":
+            avatar = ""              # animation default: no avatar (clips only)
         elif presenter:
             avatar = "boy-1" if male else "girl-1"
-    if not presenter:
+    if not presenter and style != "animation":
+        avatar = ""
+    presenter_set = ("presenter", "podcast", "cartoon", "animation")
+    if avatar and style not in presenter_set:
         avatar = ""
 
     plan = {
