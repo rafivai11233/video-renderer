@@ -381,7 +381,9 @@ def build_character_refs(plan):
 
 def build_scene_images(plan, refs):
     """One AI image per scene (up to plan.image_max), consistent characters.
-    Always available even with no API key at all (Pollinations.ai fallback)."""
+    Always available even with no API key at all (Pollinations.ai fallback).
+    Gemini path is serial (rate limits); Pollinations/HF path runs 4 at once
+    to cut wait time from ~15 min to ~4 min."""
     scenes = plan["scenes"]
     style = str(plan.get("style", "documentary")).lower()
     style_line = {"cartoon": CARTOON_STYLE_LINE,
@@ -392,12 +394,13 @@ def build_scene_images(plan, refs):
     char_desc = "; ".join(f"{c.get('name')}: {c.get('desc', '')}" for c in chars[:2])
     char_seed = (abs(hash(char_desc)) % 900000) + 1 if char_desc else None
     img_max = int(plan.get("image_max", 14))
-    images = {}
-    made = 0
-    for i, s in enumerate(scenes):
+    use_gemini = bool(GEMINI_KEY)
+
+    def gen(i):
+        s = scenes[i]
         ip = str(s.get("image_prompt", "")).strip()
-        if not ip or made >= img_max:
-            continue
+        if not ip:
+            return (i, None)
         prompt = (f"{style_line}\n"
                   + (f"Main characters (keep the SAME look as described): {char_desc}\n"
                      if char_desc else "")
@@ -405,14 +408,33 @@ def build_scene_images(plan, refs):
                   "Consistent character design across scenes. "
                   "No text, no watermark, no logo.")
         out = WORK / f"img{i:03d}.png"
-        if ai_image(prompt, refs, out, seed=char_seed):
-            images[i] = out
-            made += 1
-            if made % 5 == 0:
-                print(f"AI images: {made}/{min(img_max, len(scenes))}", flush=True)
-        time.sleep(2 if not GEMINI_KEY else 8)   # Gemini free tier needs gentler pacing
-    print(f"AI scene images: {len(images)} generated "
-          f"({'Gemini' if GEMINI_KEY else ('HuggingFace' if HF_TOKEN else 'Pollinations')} path)", flush=True)
+        ok = ai_image(prompt, refs, out, seed=char_seed)
+        if use_gemini:
+            time.sleep(6)          # Gemini free tier: ~10 req/min
+        return (i, out if ok else None)
+
+    indices = [i for i, s in enumerate(scenes)
+              if str(s.get("image_prompt", "")).strip()][:img_max]
+    images = {}
+    if use_gemini:
+        # serial - Gemini rate limits + needs ref images for consistency
+        made = 0
+        for i in indices:
+            idx, out = gen(i)
+            if out:
+                images[idx] = out
+                made += 1
+                if made % 5 == 0:
+                    print(f"AI images: {made}/{len(indices)}", flush=True)
+    else:
+        # parallel - Pollinations/HF handle concurrency fine, big speedup
+        with ThreadPoolExecutor(4) as ex:
+            results = list(ex.map(gen, indices))
+        for idx, out in results:
+            if out:
+                images[idx] = out
+    print(f"AI scene images: {len(images)}/{len(indices)} generated "
+          f"({'Gemini' if use_gemini else ('HuggingFace' if HF_TOKEN else 'Pollinations')} path)", flush=True)
     return images
 
 
@@ -494,28 +516,35 @@ def make_scene(clips, nframes, out, W, H, blur=False, c0="0x0f2027", c1="0x2c536
        "-crf", "17" if quality else "18", "-pix_fmt", "yuv420p", out)
 
 
-def image_scene(img, nframes, out, W, H, i, quality=True):
-    """Ken Burns motion (alternating zoom in / zoom out / pan) on an AI image."""
-    big_w, big_h = int(W * 1.6), int(H * 1.6)
+def image_scene(img, nframes, out, W, H, i, quality=True, style=""):
+    """Ken Burns motion (alternating zoom in / zoom out / pan) on an AI image.
+    For 3D animation style: stronger zoom (1.15) + diagonal drift + brightness
+    pulse for a more dynamic, alive feel."""
+    is_3d = style == "animation"
+    big_w, big_h = (int(W * 1.8), int(H * 1.8)) if is_3d else (int(W * 1.6), int(H * 1.6))
+    max_zoom = 1.15 if is_3d else 1.10
     motion = i % 3
+    nf = max(nframes, 1)
     if motion == 0:      # slow zoom in
-        step = 0.10 / max(nframes, 1)
-        z = f"min(zoom+{step:.6f},1.10)"
+        step = (max_zoom - 1.0) / nf
+        z = f"min(zoom+{step:.6f},{max_zoom})"
         x = "iw/2-(iw/zoom/2)"
         y = "ih/2-(ih/zoom/2)"
     elif motion == 1:    # slow zoom out
-        step = 0.10 / max(nframes, 1)
-        z = f"if(eq(on,1),1.10,max(zoom-{step:.6f},1.0))"
+        step = (max_zoom - 1.0) / nf
+        z = f"if(eq(on,1),{max_zoom},max(zoom-{step:.6f},1.0))"
         x = "iw/2-(iw/zoom/2)"
         y = "ih/2-(ih/zoom/2)"
     else:                # pan left to right at fixed zoom
-        z = "1.08"
-        x = f"(iw-iw/zoom)*(on/{max(nframes, 1)})"
+        z = f"{max_zoom - 0.02:.2f}"
+        x = f"(iw-iw/zoom)*(on/{nf})"
         y = "ih/2-(ih/zoom/2)"
+    sat = "1.15" if is_3d else "1.12"
+    con = "1.08" if is_3d else "1.06"
     vf = (f"scale={big_w}:{big_h}:force_original_aspect_ratio=increase,"
           f"crop={big_w}:{big_h},"
           f"zoompan=z='{z}':x='{x}':y='{y}':d={nframes}:s={W}x{H}:fps={FPS},"
-          "eq=contrast=1.06:saturation=1.12,format=yuv420p")
+          f"eq=contrast={con}:saturation={sat},format=yuv420p")
     ff("-i", img, "-vf", vf, "-frames:v", nframes,
        "-c:v", "libx264", "-preset", "fast" if quality else "superfast",
        "-crf", "17" if quality else "18", "-pix_fmt", "yuv420p", out)
@@ -716,16 +745,16 @@ def render_final(scene_files, slots, ass, audio, out, total, W, H,
     parts.append(f"{cur}{tail}")
     enc = ["-map", "[vout]", "-map", f"{n}:a", "-c:v", "libx264",
            "-preset", "faster" if quality else "veryfast",
-           "-crf", "18" if quality else "21",
-           "-pix_fmt", "yuv420p",
-           "-r", FPS, "-c:a", "aac", "-b:a", "192k",
+           "-crf", "17" if quality else "21",
+           "-pix_fmt", "yuv420p", "-profile:v", "high",
+           "-r", FPS, "-c:a", "aac", "-b:a", "256k", "-ar", "48000",
            "-movflags", "+faststart", "-t", f"{total:.3f}"]
     if tune:
         enc = ["-map", "[vout]", "-map", f"{n}:a", "-c:v", "libx264",
                "-preset", "faster" if quality else "veryfast",
-               "-crf", "18" if quality else "21",
-               "-tune", tune, "-pix_fmt", "yuv420p",
-               "-r", FPS, "-c:a", "aac", "-b:a", "192k",
+               "-crf", "17" if quality else "21",
+               "-tune", tune, "-pix_fmt", "yuv420p", "-profile:v", "high",
+               "-r", FPS, "-c:a", "aac", "-b:a", "256k", "-ar", "48000",
                "-movflags", "+faststart", "-t", f"{total:.3f}"]
     try:
         ff(*ins, "-filter_complex", ";".join(parts), *enc, out)
@@ -763,6 +792,18 @@ def make_thumbnail(video, text, lang, out, W, H):
 
 
 # -------------------------------------------------------------------- main
+def _callback(plan, status="done", error=""):
+    """POST final status to n8n so the Wait node never hangs."""
+    url = plan.get("resume_url", "")
+    if not url:
+        return
+    try:
+        requests.post(url, json={"status": status, "error": error,
+                                  "job_id": plan.get("job_id", "")}, timeout=30)
+    except Exception as e:  # noqa: BLE001
+        print(f"callback failed: {e}", flush=True)
+
+
 def main():
     global GEMINI_KEY, HF_TOKEN
     plan = json.load(open("plan.json", encoding="utf-8"))
@@ -916,13 +957,13 @@ def main():
         if img is None and not clips and photo_by_scene.get(i):
             img = photo_by_scene[i]
         if img is not None:
-            image_scene(img, frames, f, W, H, i, quality)
+            image_scene(img, frames, f, W, H, i, quality, style)
         elif clips:
             make_scene(clips, frames, f, W, H, bg_blur, C0, C1, quality)
         elif photo_by_scene:
             # no clip for this scene and no photo of its own - borrow one
             any_photo = next(iter(photo_by_scene.values()))
-            image_scene(any_photo, frames, f, W, H, i, quality)
+            image_scene(any_photo, frames, f, W, H, i, quality, style)
         elif pool:
             make_scene(random.sample(pool, min(2, len(pool))), frames, f, W, H,
                        bg_blur, C0, C1, quality)
@@ -930,7 +971,7 @@ def main():
             make_scene([], frames, f, W, H, bg_blur, C0, C1, quality)
         return f
 
-    with ThreadPoolExecutor(2) as ex:
+    with ThreadPoolExecutor(3) as ex:
         scene_files = list(ex.map(build_one, range(n)))
 
     # 6. character overlays
@@ -999,7 +1040,17 @@ def main():
     make_thumbnail(scene_files[0], plan.get("thumbnail_text") or plan.get("title", ""),
                    lang, OUT / "thumbnail.jpg", W, H)
     print("done", flush=True)
+    _callback(plan, status="done")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception as e:
+        print(f"FATAL: {e}", flush=True)
+        try:
+            _callback(json.load(open("plan.json", encoding="utf-8")),
+                      status="error", error=str(e)[:500])
+        except Exception:
+            pass
+        raise
