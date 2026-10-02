@@ -13,7 +13,20 @@ Script → stock media → voice → render → upload → sheet update — 100%
 | `cartoon` | **Gopal Bhar type funny cartoon story** | cartoon-boy-1 / cartoon-girl-1 |
 | `animation` | 3D/animated explainer (Pixabay 3D clips) | nai |
 
-**Avatar column (K):** `girl-1`, `boy-1`, `cartoon-boy-1`, `cartoon-girl-1` — khali rakhle voice dekhe auto.
+**Character/Avatar column (K) — 8-ta ready character:**
+
+| Avatar | Char | Kokhon use korba |
+|---|---|---|
+| `girl-1` | meye presenter | motivation/lifestyle |
+| `boy-1` | chele presenter | motivation |
+| `cartoon-boy-1` | **Gopal Bhar type cartoon chele** | funny story |
+| `cartoon-girl-1` | cartoon meye | funny story |
+| `grandpa-1` | gnani dadu | golpo/history/wisdom |
+| `robot-1` | robot | AI/tech (animation style) |
+| `kid-boy-1` | bachcha chele | kids content |
+| `bizman-1` | business man | success/business |
+
+Khali rakhle voice dekhe auto beche ney. Voice chara dile ekdom thik matching voice nijei boshbe.
 **Free limits:** repo public = Actions unlimited. Ek run e 5 video, prottek 3 ghonta.
 
 ---
