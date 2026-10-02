@@ -129,11 +129,11 @@ def fetch_clip(url):
     return {"path": dest, "dur": dur} if dur >= 1.5 else None
 
 
-def make_scene(i, clips, nframes, out, W, H, blur=False):
+def make_scene(i, clips, nframes, out, W, H, blur=False, c0="0x0f2027", c1="0x2c5364"):
     """Cut jump-cuts from the clips and join them into one exact-length scene."""
     if not clips:
         ff("-f", "lavfi", "-i",
-           f"gradients=s={W}x{H}:d={nframes / FPS + 1:.2f}:r={FPS}:speed=0.02:c0=0x0f2027:c1=0x2c5364",
+           f"gradients=s={W}x{H}:d={nframes / FPS + 1:.2f}:r={FPS}:speed=0.02:c0={c0}:c1={c1}",
            "-frames:v", nframes, "-c:v", "libx264", "-preset", "superfast",
            "-crf", "18", "-pix_fmt", "yuv420p", out)
         return
@@ -251,18 +251,26 @@ def clean_ass(t):
     return t.replace("{", "").replace("}", "").replace("\\", "").replace("\n", " ")
 
 
-def write_ass(path, scenes, starts, speech, lang, W, H):
+def write_ass(path, scenes, starts, speech, lang, W, H, style="documentary"):
     font = FONTS.get(lang, "Noto Sans")
     size = int(H * 0.058) if W >= H else int(W * 0.062)
+    # cartoon style: big bold comic text with thick outline
+    if style == "cartoon":
+        size = int(size * 1.15)
+        style_line = (f"Style: Default,{font},{size},&H0000E8D8,&H000000FF,&H00000000,&H80000000,"
+                      f"1,-1,0,0,100,100,0,0,1,5,2,2,"
+                      f"{int(W * 0.06)},{int(W * 0.06)},{int(H * 0.07)},1")
+    else:
+        style_line = (f"Style: Default,{font},{size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,"
+                      f"1,0,0,0,100,100,0,0,1,3,1,2,"
+                      f"{int(W * 0.06)},{int(W * 0.06)},{int(H * 0.07)},1")
     lines = [
         "[Script Info]", "ScriptType: v4.00+", f"PlayResX: {W}", f"PlayResY: {H}",
         "WrapStyle: 0", "", "[V4+ Styles]",
         "Format: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,BackColour,"
         "Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,"
         "Alignment,MarginL,MarginR,MarginV,Encoding",
-        f"Style: Default,{font},{size},&H00FFFFFF,&H000000FF,&H00000000,&H80000000,"
-        f"1,0,0,0,100,100,0,0,1,3,1,2,{int(W * 0.06)},{int(W * 0.06)},{int(H * 0.07)},1",
-        "", "[Events]",
+        style_line, "", "[Events]",
         "Format: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text",
     ]
     for s, start, sp in zip(scenes, starts, speech):
@@ -348,6 +356,9 @@ def main():
     style = str(plan.get("style", "documentary")).lower()
     avatar_mode = str(plan.get("avatar_mode", "corner")).lower()
     bg_blur = style == "podcast" or avatar_mode == "center"
+    # background gradient palette per style
+    C0, C1 = {"cartoon": ("0xFFB75C", "0xFF7B6B"),
+              "animation": ("0x4776E6", "0x8E54E9")}.get(style, ("0x0f2027", "0x2c5364"))
     print(f"{n} scenes, {W}x{H}, voice={plan.get('voice')}, style={style}", flush=True)
 
     # 1. voice
@@ -387,11 +398,11 @@ def main():
             clips = random.sample(pool, min(2, len(pool)))
         frames = slots[i] + (XF_FRAMES if i < n - 1 else 0)
         f = WORK / f"scene{i:03d}.mp4"
-        make_scene(i, clips, frames, f, W, H, bg_blur)
+        make_scene(i, clips, frames, f, W, H, bg_blur, C0, C1)
         scene_files.append(f)
 
     # 3b. presenter overlay (influencer / podcast / motivational talking-head)
-    if style in ("presenter", "podcast", "facecam") and AVATARS:
+    if style in ("presenter", "podcast", "facecam", "cartoon") and AVATARS:
         av_name = str(plan.get("avatar") or ("girl-1" if "girl-1" in AVATARS else sorted(AVATARS)[0]))
         if av_name in AVATARS:
             A = int(W * (0.40 if avatar_mode == "center" else 0.28))
@@ -417,9 +428,9 @@ def main():
     # 5. captions + final timeline
     ass = WORK / "subs.ass"
     if plan.get("captions", True):
-        write_ass(ass, scenes, starts, speech, lang, W, H)
+        write_ass(ass, scenes, starts, speech, lang, W, H, style)
     else:
-        write_ass(ass, [], [], [], lang, W, H)
+        write_ass(ass, [], [], [], lang, W, H, style)
     render_final(scene_files, slots, ass, final_audio, OUT / "final.mp4", total, W, H)
 
     # 6. thumbnail (frame from the hook scene, so no captions in it)
