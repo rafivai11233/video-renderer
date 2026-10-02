@@ -32,6 +32,11 @@ TRANSITIONS = ["fade", "dissolve", "fade", "fadeblack"]
 WORK = Path("work")
 OUT = Path("out")
 
+# Presenter avatars (AI-generated, royalty-free) - png files in /avatars
+AVATARS = {}
+if Path("avatars").exists():
+    AVATARS = {p.stem: p for p in Path("avatars").glob("*.png")}
+
 VOICE_FX = (
     "highpass=f=75,"
     "equalizer=f=250:t=q:w=1.2:g=-2,"          # reduce mud
@@ -124,7 +129,7 @@ def fetch_clip(url):
     return {"path": dest, "dur": dur} if dur >= 1.5 else None
 
 
-def make_scene(i, clips, nframes, out, W, H):
+def make_scene(i, clips, nframes, out, W, H, blur=False):
     """Cut jump-cuts from the clips and join them into one exact-length scene."""
     if not clips:
         ff("-f", "lavfi", "-i",
@@ -145,7 +150,8 @@ def make_scene(i, clips, nframes, out, W, H):
         left -= n
         k += 1
     grade = (f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
-             f"setsar=1,fps={FPS},eq=contrast=1.04:saturation=1.08,format=yuv420p,"
+             + ("boxblur=6:2," if blur else "")
+             + f"setsar=1,fps={FPS},eq=contrast=1.04:saturation=1.08,format=yuv420p,"
              "setpts=PTS-STARTPTS")
     args, fparts = [], []
     for j, (path, start, n) in enumerate(segs):
@@ -157,6 +163,23 @@ def make_scene(i, clips, nframes, out, W, H):
     ff(*args, "-filter_complex", ";".join(fparts), "-map", "[v]",
        "-frames:v", nframes, "-an", "-c:v", "libx264", "-preset", "superfast",
        "-crf", "18", "-pix_fmt", "yuv420p", out)
+
+
+def circle_avatar(src, size, out):
+    """Square avatar PNG -> circular avatar PNG with a soft edge ring."""
+    ff("-i", src, "-vf",
+       f"scale={size}:{size}:force_original_aspect_ratio=increase,crop={size}:{size},"
+       "format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':"
+       "a='if(lt(hypot(X-W/2,Y-H/2),W/2-4),255,if(lt(hypot(X-W/2,Y-H/2),W/2-1),140,0))'",
+       "-frames:v", "1", out)
+
+
+def presenter_overlay(scene, avatar_png, x, y, out):
+    """Composite the circular avatar over a rendered scene video."""
+    ff("-i", scene, "-loop", "1", "-i", avatar_png,
+       "-filter_complex", f"[1:v]format=rgba[av];[0:v][av]overlay={x}:{y}:shortest=1[v]",
+       "-map", "[v]", "-an", "-c:v", "libx264", "-preset", "superfast",
+       "-crf", "20", "-pix_fmt", "yuv420p", out)
 
 
 # ------------------------------------------------------------------- music
@@ -322,7 +345,10 @@ def main():
     scenes = plan["scenes"]
     n = len(scenes)
     lang = str(plan.get("language", "en")).lower()[:2]
-    print(f"{n} scenes, {W}x{H}, voice={plan.get('voice')}", flush=True)
+    style = str(plan.get("style", "documentary")).lower()
+    avatar_mode = str(plan.get("avatar_mode", "corner")).lower()
+    bg_blur = style == "podcast" or avatar_mode == "center"
+    print(f"{n} scenes, {W}x{H}, voice={plan.get('voice')}, style={style}", flush=True)
 
     # 1. voice
     asyncio.run(tts_all(scenes, plan.get("voice", "en-US-AndrewMultilingualNeural"),
@@ -361,8 +387,27 @@ def main():
             clips = random.sample(pool, min(2, len(pool)))
         frames = slots[i] + (XF_FRAMES if i < n - 1 else 0)
         f = WORK / f"scene{i:03d}.mp4"
-        make_scene(i, clips, frames, f, W, H)
+        make_scene(i, clips, frames, f, W, H, bg_blur)
         scene_files.append(f)
+
+    # 3b. presenter overlay (influencer / podcast / motivational talking-head)
+    if style in ("presenter", "podcast", "facecam") and AVATARS:
+        av_name = str(plan.get("avatar") or ("girl-1" if "girl-1" in AVATARS else sorted(AVATARS)[0]))
+        if av_name in AVATARS:
+            A = int(W * (0.40 if avatar_mode == "center" else 0.28))
+            circ = WORK / f"avatar_{av_name}_{A}.png"
+            circle_avatar(AVATARS[av_name], A, circ)
+            x, y = ((W - A) // 2, int(H * 0.14)) if avatar_mode == "center" \
+                else (W - A - int(W * 0.03), H - A - int(H * 0.05))
+            overlay_files = []
+            for i, sf in enumerate(scene_files):
+                po = WORK / f"pscene{i:03d}.mp4"
+                presenter_overlay(sf, circ, x, y, po)
+                overlay_files.append(po)
+            scene_files = overlay_files
+            print(f"presenter overlay: {av_name} mode={avatar_mode} size={A}px", flush=True)
+        else:
+            print(f"avatar '{av_name}' not found (have: {sorted(AVATARS)}) - skipping overlay", flush=True)
 
     # 4. audio: music bed + ducking + loudness
     bed = build_music(total, plan.get("music_mood"))
