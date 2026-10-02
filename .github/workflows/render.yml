@@ -1,5 +1,4 @@
 name: render
-# run-name makes the run easy to find in the Actions tab
 run-name: render ${{ inputs.job_id }}
 
 on:
@@ -13,33 +12,31 @@ on:
         required: true
 
 permissions:
-  contents: write   # needed to create the release
+  contents: write
 
 jobs:
   render:
     runs-on: ubuntu-latest
-    timeout-minutes: 120
+    timeout-minutes: 330   # must stay >= the n8n "Wait for render" node's resumeAmount
     steps:
       - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-
       - name: Install ffmpeg, fonts, python libs
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y -qq ffmpeg fontconfig fonts-noto-core fonts-noto-ui-core
           pip install -q edge-tts requests
-
       - name: Write plan
         env:
           PLAN: ${{ inputs.plan }}
         run: printf '%s' "$PLAN" > plan.json
-
       - name: Render video
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          HF_API_TOKEN: ${{ secrets.HF_API_TOKEN }}
         run: python render.py
-
       - name: Publish release (video + thumbnail)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -47,11 +44,8 @@ jobs:
         run: |
           gh release create "$JOB_ID" out/final.mp4 out/thumbnail.jpg \
             --title "$JOB_ID" --notes "Automated render"
-          # keep only the newest 20 releases
           gh release list --limit 100 --json tagName --jq '.[20:][].tagName' \
             | xargs -r -n1 gh release delete --cleanup-tag -y
-
-      # Always tell n8n how it ended, so the workflow never waits forever
       - name: Notify n8n
         if: always()
         env:
