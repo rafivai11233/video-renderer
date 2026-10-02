@@ -2,9 +2,12 @@
 """
 Full automated video pipeline - runs 100% on GitHub Actions, no n8n.
 
-Flow: Google Sheet (queued topic) -> Gemini script -> Pixabay clips
+Flow: Google Sheet (queued topics) -> Gemini script -> Pixabay clips
       -> plan.json -> render.py (Edge TTS + ffmpeg + music + captions
       + presenter avatars + thumbnail) -> GitHub Release -> Sheet update.
+
+One run makes MULTIPLE videos (up to PIPELINE_MAX_VIDEOS or the time
+budget), so a long queue drains fast. Repo is public => unlimited minutes.
 
 Required environment (GitHub Secrets):
   GEMINI_API_KEY    - Google AI Studio key (AIza...)
@@ -31,10 +34,15 @@ PIXABAY_KEY = os.environ.get("PIXABAY_API_KEY", "")
 GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-2.5-flash-lite")
 REPO = "rafivai11233/video-renderer"
 
+MAX_VIDEOS = int(os.environ.get("PIPELINE_MAX_VIDEOS", "5"))       # per run
+BUDGET_MIN = float(os.environ.get("PIPELINE_BUDGET_MIN", "50"))    # per run
+MAX_CONSECUTIVE_FAILURES = 2
+
 # Sheet columns: A topic | B language | C voice | D status | E job_id
-#                F video_url | G thumb_url | H release_url | I error | J style
+#   F video_url | G thumb_url | H release_url | I error | J style | K avatar
 COL = {"topic": 1, "language": 2, "voice": 3, "status": 4, "job_id": 5,
-       "video_url": 6, "thumb_url": 7, "release_url": 8, "error": 9, "style": 10}
+       "video_url": 6, "thumb_url": 7, "release_url": 8, "error": 9,
+       "style": 10, "avatar": 11}
 
 
 # --------------------------------------------------------------- small utils
@@ -53,6 +61,11 @@ def extract_json(text):
     return json.loads(m.group(0))
 
 
+def rowval(row, name):
+    i = COL[name] - 1
+    return row[i].strip() if len(row) > i and row[i] else ""
+
+
 # -------------------------------------------------------------------- sheet
 def open_sheet():
     import gspread  # noqa: late import keeps selftest light
@@ -65,11 +78,11 @@ def open_sheet():
 
 
 def pick_topic(sh):
-    """Return (row_number, row_dict) of the first queued row, else (None, None)."""
+    """Return (row_number, row) of the first queued row, else (None, None)."""
     for i, row in enumerate(sh.get_all_values()[1:], start=2):
         if not row or not row[0].strip():
             continue
-        status = row[COL["status"] - 1].strip().lower() if len(row) > 3 else ""
+        status = rowval(row, "status").lower()
         if status in ("", "queued"):
             return i, row
     return None, None
@@ -143,7 +156,6 @@ def pixabay_clips(keywords, want=3):
         if not kw:
             continue
         try:
-            # videos
             r = requests.get(
                 "https://pixabay.com/api/videos/",
                 params={"key": PIXABAY_KEY, "q": kw, "per_page": 5, "safe_search": "true"},
@@ -204,14 +216,13 @@ def release_urls(job_id):
     return assets.get("final.mp4", ""), assets.get("thumbnail.jpg", "")
 
 
-# --------------------------------------------------------------------- main
+# --------------------------------------------------------------------- plan
 def build_plan(job_id, row, script, scenes):
-    topic = row[COL["topic"] - 1].strip()
-    language = (row[COL["language"] - 1].strip() if len(row) > 1 else "en") or "en"
-    language = language[:2].lower()
-    voice = row[COL["voice"] - 1].strip() if len(row) > 2 else ""
-    style = (row[COL["style"] - 1].strip().lower()
-             if len(row) > COL["style"] - 1 and len(row) > 9 else "documentary") or "documentary"
+    topic = rowval(row, "topic")
+    language = (rowval(row, "language") or "en")[:2].lower()
+    voice = rowval(row, "voice")
+    style = (rowval(row, "style") or "documentary").lower()
+    avatar = rowval(row, "avatar")
     presenter = style in ("presenter", "podcast")
 
     if not voice:
@@ -219,6 +230,9 @@ def build_plan(job_id, row, script, scenes):
             voice = "bn-BD-NabanitaNeural" if language == "bn" else "en-US-AvaMultilingualNeural"
         else:
             voice = "bn-BD-NabanitaNeural" if language == "bn" else "en-US-AndrewMultilingualNeural"
+    if presenter and not avatar:
+        v = voice.lower()
+        avatar = "boy-1" if ("andrew" in v or "christopher" in v or "pradeep" in v) else "girl-1"
 
     plan = {
         "job_id": job_id,
@@ -230,7 +244,7 @@ def build_plan(job_id, row, script, scenes):
         "resolution": "720",
         "format": "16:9",
         "style": style,
-        "avatar": "girl-1" if presenter else "",
+        "avatar": avatar if presenter else "",
         "avatar_mode": "center" if style == "podcast" else "corner",
         "music_mood": script.get("music_mood") or "calm",
         "music_volume": 0.3,
@@ -241,40 +255,39 @@ def build_plan(job_id, row, script, scenes):
     return plan
 
 
-def run_pipeline():
-    sh = open_sheet()
+# ------------------------------------------------------------------- engine
+def make_video(sh):
+    """Render ONE queued topic. Returns 'done', 'failed' or 'empty'."""
     row_i, row = pick_topic(sh)
     if row_i is None:
-        print("No queued topics in the sheet - nothing to do.", flush=True)
-        return 0
+        return "empty"
 
-    topic = row[COL["topic"] - 1].strip()
+    topic = rowval(row, "topic")
     job_id = f"{slugify(topic)}-{int(time.time())}"
-    print(f"picked row {row_i}: {topic}\njob_id: {job_id}", flush=True)
+    print(f"\n=== next topic (row {row_i}): {topic}\njob_id: {job_id}", flush=True)
     cell(sh, row_i, "status", "rendering")
     cell(sh, row_i, "job_id", job_id)
     cell(sh, row_i, "error", "")
 
     try:
-        style_row = (row[COL["style"] - 1].strip().lower()
-                     if len(row) > COL["style"] - 1 else "documentary") or "documentary"
-        language = (row[COL["language"] - 1].strip() if len(row) > 1 else "en") or "en"
+        style = (rowval(row, "style") or "documentary").lower()
+        language = (rowval(row, "language") or "en")[:2].lower()
 
         print("Gemini: writing script...", flush=True)
-        script = gemini_script(topic, language[:2].lower(), style_row)
-
+        script = gemini_script(topic, language, style)
         print(f"Gemini: {len(script.get('scenes', []))} scenes, mood={script.get('music_mood')}", flush=True)
+
         scenes = []
         for idx, s in enumerate(script["scenes"]):
             clips = []
-            if style_row == "documentary":
+            if style == "documentary":
                 clips = pixabay_clips(s.get("clip_keywords", []))
             scenes.append({"narration": s["narration"], "clips": clips})
             print(f"scene {idx + 1}: {len(s['narration'].split())} words, {len(clips)} clips", flush=True)
 
         plan = build_plan(job_id, row, script, scenes)
         Path("plan.json").write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
-        print(f"plan.json written (style={plan['style']}, voice={plan['voice']})", flush=True)
+        print(f"plan.json written (style={plan['style']}, voice={plan['voice']}, avatar={plan['avatar']})", flush=True)
 
         print("render.py: TTS + ffmpeg render starting...", flush=True)
         subprocess.run([sys.executable, "render.py"], check=True)
@@ -289,12 +302,34 @@ def run_pipeline():
         cell(sh, row_i, "thumb_url", thumb_url)
         cell(sh, row_i, "release_url", release_url)
         print(f"DONE: {job_id}\nvideo: {video_url}", flush=True)
-        return 0
+        return "done"
     except Exception as e:  # noqa: BLE001
         traceback.print_exc()
         cell(sh, row_i, "status", "failed")
         cell(sh, row_i, "error", str(e)[:200])
-        return 1
+        return "failed"
+
+
+def run_pipeline():
+    sh = open_sheet()
+    made, failed_streak = 0, 0
+    start = time.time()
+    while made < MAX_VIDEOS and (time.time() - start) < BUDGET_MIN * 60:
+        result = make_video(sh)
+        if result == "empty":
+            print("Queue is empty - nothing more to do.", flush=True)
+            break
+        if result == "done":
+            made += 1
+            failed_streak = 0
+        else:
+            failed_streak += 1
+            if failed_streak >= MAX_CONSECUTIVE_FAILURES:
+                print(f"{failed_streak} failures in a row - stopping "
+                      "(check the sheet's error column / Actions log).", flush=True)
+                return 1
+    print(f"run finished: {made} video(s) made in {(time.time() - start) / 60:.1f} min", flush=True)
+    return 0 if made or failed_streak == 0 else 1
 
 
 # ------------------------------------------------------------------ selftest
@@ -311,11 +346,10 @@ def run_selftest():
              "clip_keywords": []},
         ],
     }
-    row = ["Selftest", "en", "en-US-AvaMultilingualNeural", "", "", "", "", "", "", "presenter"]
+    row = ["Selftest", "en", "en-US-AvaMultilingualNeural", "", "", "", "", "", "", "podcast", "boy-1"]
     plan = build_plan("selftest-local", row, script, script["scenes"])
-    plan["style"], plan["avatar_mode"] = "podcast", "center"
     Path("plan.json").write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
-    print(f"selftest plan: style={plan['style']} voice={plan['voice']} scenes={len(plan['scenes'])}", flush=True)
+    print(f"selftest plan: style={plan['style']} voice={plan['voice']} avatar={plan['avatar']} scenes={len(plan['scenes'])}", flush=True)
     subprocess.run([sys.executable, "render.py"], check=True)
     out = Path("out/final.mp4")
     print(f"SELFTEST OK -> {out} ({out.stat().st_size / 1e6:.1f} MB)")
