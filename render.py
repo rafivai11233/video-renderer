@@ -486,7 +486,7 @@ def pick_music(mood):
         return None
     want = MUSIC_FILE_MOOD.get(str(mood or "").lower())
     if want:
-        moody = [p for p in files if want in [x.lower() for x in p.parts]]
+        moody = [p for p in files if want in str(p).lower()]
         if moody:
             files = moody
     return random.choice(files)
