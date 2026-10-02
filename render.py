@@ -792,18 +792,6 @@ def make_thumbnail(video, text, lang, out, W, H):
 
 
 # -------------------------------------------------------------------- main
-def _callback(plan, status="done", error=""):
-    """POST final status to n8n so the Wait node never hangs."""
-    url = plan.get("resume_url", "")
-    if not url:
-        return
-    try:
-        requests.post(url, json={"status": status, "error": error,
-                                  "job_id": plan.get("job_id", "")}, timeout=30)
-    except Exception as e:  # noqa: BLE001
-        print(f"callback failed: {e}", flush=True)
-
-
 def main():
     global GEMINI_KEY, HF_TOKEN
     plan = json.load(open("plan.json", encoding="utf-8"))
@@ -1040,17 +1028,7 @@ def main():
     make_thumbnail(scene_files[0], plan.get("thumbnail_text") or plan.get("title", ""),
                    lang, OUT / "thumbnail.jpg", W, H)
     print("done", flush=True)
-    _callback(plan, status="done")
 
 
 if __name__ == "__main__":
-    try:
-        main()
-    except Exception as e:
-        print(f"FATAL: {e}", flush=True)
-        try:
-            _callback(json.load(open("plan.json", encoding="utf-8")),
-                      status="error", error=str(e)[:500])
-        except Exception:
-            pass
-        raise
+    main()
