@@ -377,6 +377,21 @@ def fetch_clip(url):
     return {"path": dest, "dur": dur} if dur >= 1.5 else None
 
 
+def fetch_photo(url):
+    """Download a copyright-free photo for the no-AI-key fallback. Returns path or None."""
+    try:
+        r = requests.get(url, timeout=25)
+        r.raise_for_status()
+        if len(r.content) < 20000:
+            return None
+        dest = WORK / "photos" / (hashlib.md5(url.encode()).hexdigest() + ".jpg")
+        dest.write_bytes(r.content)
+        return dest
+    except Exception as e:
+        print(f"photo failed {url[:60]}: {e}", flush=True)
+        return None
+
+
 def make_scene(clips, nframes, out, W, H, blur=False, c0="0x0f2027", c1="0x2c5364",
                quality=True):
     """Cut jump-cuts from stock clips and join them into one exact-length scene."""
@@ -693,6 +708,7 @@ def main():
     random.seed(plan.get("job_id", "x"))
     WORK.mkdir(exist_ok=True)
     (WORK / "clips").mkdir(exist_ok=True)
+    (WORK / "photos").mkdir(exist_ok=True)
     OUT.mkdir(exist_ok=True)
 
     W, H = dims(plan)
@@ -805,6 +821,19 @@ def main():
     pool = [c for c in got.values() if c]
     print(f"clips downloaded: {len(pool)}/{len(urls)}", flush=True)
 
+    # 4b. scene photos (no-AI-key fallback: Ken Burns over free stock photos)
+    photo_urls = sorted({u for s in scenes for u in s.get("photos", []) if u})
+    photo_by_scene = {}
+    if photo_urls:
+        with ThreadPoolExecutor(6) as ex:
+            pgot = dict(zip(photo_urls, ex.map(fetch_photo, photo_urls)))
+        for i, s in enumerate(scenes):
+            for u in s.get("photos", []):
+                if pgot.get(u):
+                    photo_by_scene[i] = pgot[u]
+                    break
+        print(f"photos ready: {len(photo_by_scene)}/{n} scenes", flush=True)
+
     # 5. scene videos (exact length, +crossfade overlap on all but last)
     def build_one(i):
         s = scenes[i]
@@ -812,6 +841,8 @@ def main():
         frames = slots[i] + (XF_FRAMES if i < n - 1 else 0)
         f = WORK / f"scene{i:03d}.mp4"
         img = images.get(i)
+        if img is None and is_cartoonish(style) and photo_by_scene:
+            img = photo_by_scene.get(i)                # no AI key: free photo + motion
         if img is None and is_cartoonish(style) and img_pool:
             img = img_pool[i % len(img_pool)]          # reuse with different motion
         if img is not None:
