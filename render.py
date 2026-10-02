@@ -349,21 +349,21 @@ def render_final(scene_files, slots, ass, audio, out, total, W, H):
            "-map", "[vout]", "-map", "1:a", *enc[4:], out)
 
 
-def make_thumbnail(video, text, lang, out):
+def make_thumbnail(video, text, lang, out, W=1280, H=720):
     font = FONTS.get(lang, "Noto Sans")
     words = clean_ass(text or "").upper().split() if lang == "en" else clean_ass(text or "").split()
     half = math.ceil(len(words) / 2)
     txt = " ".join(words[:half]) + ("\\N" + " ".join(words[half:]) if len(words) > 2 else "")
     ass = WORK / "thumb.ass"
     ass.write_text(
-        "[Script Info]\nScriptType: v4.00+\nPlayResX: 1280\nPlayResY: 720\nWrapStyle: 2\n\n"
+        f"[Script Info]\nScriptType: v4.00+\nPlayResX: {W}\nPlayResY: {H}\nWrapStyle: 2\n\n"
         "[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,"
         "BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,"
         "Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\n"
         f"Style: T,{font},104,&H0000E6FF,&H000000FF,&H00000000,&H80000000,1,0,0,0,100,100,0,0,1,8,3,1,60,60,60,1\n\n"
         "[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n"
         f"Dialogue: 0,0:00:00.00,0:00:10.00,T,,0,0,0,,{txt}\n", encoding="utf-8")
-    vf = ("scale=1280:720:force_original_aspect_ratio=increase,crop=1280:720,"
+    vf = (f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
           "eq=contrast=1.12:saturation=1.3,"
           "drawbox=x=0:y=ih*0.45:w=iw:h=ih*0.55:color=black@0.45:t=fill,"
           f"ass={ass}")
@@ -464,7 +464,7 @@ def main():
 
     # 6. thumbnail (frame from the hook scene, so no captions in it)
     make_thumbnail(scene_files[0], plan.get("thumbnail_text") or plan.get("title", ""),
-                   lang, OUT / "thumbnail.jpg")
+                   lang, OUT / "thumbnail.jpg", W, H)
     print("done", flush=True)
 
 
