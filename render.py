@@ -81,6 +81,10 @@ PODCAST_STYLE_LINE = ("Cozy modern podcast studio illustration, warm lighting, "
 
 
 # ----------------------------------------------------------------- helpers
+# Wikimedia Commons blocks default python-requests UA - send a proper one
+UA = {"User-Agent": "video-renderer/1.0 (github.com/rafivai11233/video-renderer)"}
+
+
 def sh(cmd):
     cmd = [str(c) for c in cmd]
     print("+", " ".join(cmd)[:500], flush=True)
@@ -389,7 +393,9 @@ def build_scene_images(plan, refs):
     style_line = {"cartoon": CARTOON_STYLE_LINE,
                   "cartoon-podcast": CARTOON_STYLE_LINE,
                   "animation": ANIMATION_STYLE_LINE,
-                  "podcast": PODCAST_STYLE_LINE}.get(style, CARTOON_STYLE_LINE)
+                  "podcast": PODCAST_STYLE_LINE,
+                  "documentary": "Photorealistic cinematic documentary photograph, natural lighting, rich color, high detail.",
+                  "presenter": "Photorealistic cinematic photograph, warm professional lighting, high detail."}.get(style, CARTOON_STYLE_LINE)
     chars = [c for c in plan.get("characters", []) if c.get("name")]
     char_desc = "; ".join(f"{c.get('name')}: {c.get('desc', '')}" for c in chars[:2])
     char_seed = (abs(hash(char_desc)) % 900000) + 1 if char_desc else None
@@ -413,8 +419,17 @@ def build_scene_images(plan, refs):
             time.sleep(6)          # Gemini free tier: ~10 req/min
         return (i, out if ok else None)
 
-    indices = [i for i, s in enumerate(scenes)
-              if str(s.get("image_prompt", "")).strip()][:img_max]
+    if is_cartoonish(str(plan.get("style", "documentary")).lower()):
+        indices = [i for i, s in enumerate(scenes)
+                   if str(s.get("image_prompt", "")).strip()][:img_max]
+    else:
+        # non-cartoon: only scenes that NEED an AI image - animation-typed
+        # scenes (abstract ideas stock footage cannot show) and scenes with
+        # no clip and no photo at all. Keeps real footage untouched.
+        indices = [i for i, s in enumerate(scenes)
+                   if str(s.get("image_prompt", "")).strip()
+                   and (str(s.get("visual_type", "")).lower() == "animation"
+                        or not (s.get("clips") or s.get("photos")))][:img_max]
     images = {}
     if use_gemini:
         # serial - Gemini rate limits + needs ref images for consistency
@@ -442,7 +457,7 @@ def build_scene_images(plan, refs):
 def download(url, dest):
     for attempt in range(3):
         try:
-            with requests.get(url, stream=True, timeout=60) as r:
+            with requests.get(url, stream=True, timeout=60, headers=UA) as r:
                 r.raise_for_status()
                 with open(dest, "wb") as f:
                     for chunk in r.iter_content(1 << 20):
@@ -467,7 +482,7 @@ def fetch_clip(url):
 def fetch_photo(url):
     """Download a copyright-free photo for the no-AI-key fallback. Returns path or None."""
     try:
-        r = requests.get(url, timeout=25)
+        r = requests.get(url, timeout=25, headers=UA)
         r.raise_for_status()
         if len(r.content) < 20000:
             return None
@@ -902,10 +917,13 @@ def main():
     starts = [sum(slots[:i]) / FPS for i in range(n)]
     print(f"total length {total:.1f}s ({total / 60:.1f} min)", flush=True)
 
-    # 3. AI cartoon images (consistent characters) - before clips so they exist early
+    # 3. AI images (consistent characters for cartoons; smart fallback for the rest)
     images = {}
-    if plan.get("ai_images") and is_cartoonish(style):
-        refs = build_character_refs(plan)
+    if plan.get("ai_images"):
+        if is_cartoonish(style):
+            refs = build_character_refs(plan)
+        else:
+            refs = []
         images = build_scene_images(plan, refs)
         print(f"AI images ready: {len(images)} for {n} scenes", flush=True)
     img_pool = list(images.values())
@@ -944,6 +962,15 @@ def main():
         # topics (Wikimedia Commons archive photos) as well as no-AI-key cartoons
         if img is None and not clips and photo_by_scene.get(i):
             img = photo_by_scene[i]
+        # animation-typed scene (abstract idea): AI image beats stock footage
+        if img is None and clips and str(s.get("visual_type", "")).lower() == "animation" and images.get(i):
+            img = images.get(i)
+        # nothing at all for this scene: its own AI image, else borrow
+        if img is None and not clips and not photo_by_scene.get(i):
+            if images.get(i):
+                img = images.get(i)
+            elif img_pool:
+                img = img_pool[i % len(img_pool)]
         if img is not None:
             image_scene(img, frames, f, W, H, i, quality, style)
         elif clips:
