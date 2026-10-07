@@ -785,6 +785,57 @@ def render_final(scene_files, slots, ass, audio, out, total, W, H,
            "-map", "[vout]", "-map", "1:a", *tail_args, out)
 
 
+def ai_thumbnail_bg(plan):
+    """Free AI thumbnail background via Pollinations (no key, no account).
+    Focal subject on the left, space for text on the right."""
+    title = clean_ass(str(plan.get("title") or ""))[:90]
+    text = clean_ass(str(plan.get("thumbnail_text") or ""))[:60]
+    style = str(plan.get("style", "documentary")).lower()
+    if style in ("cartoon", "cartoon-podcast"):
+        look = ("Bold colorful cartoon illustration, thick outlines, vivid flat colors, "
+                "expressive characters, playful energy")
+    elif style == "animation":
+        look = "Modern flat vector illustration, clean shapes, vivid colors"
+    elif style == "podcast":
+        look = "Warm cinematic photograph style, soft light, intimate mood"
+    else:
+        look = ("Photorealistic cinematic photograph, dramatic lighting, "
+                "high contrast, rich colors, epic documentary mood")
+    prompt = (f"YouTube thumbnail background for a video titled: {title}. "
+              f"Key idea: {text}. One striking emotional focal subject, large and clear, "
+              f"on the LEFT half of the frame looking toward the camera. "
+              f"Right half darker and simpler, left free for a text overlay. {look}. "
+              "No text, no letters, no numbers, no logos, no watermarks.")
+    out = WORK / "thumb_bg.png"
+    return out if pollinations_image(prompt, out, seed=random.randint(1, 899999), tries=2) else None
+
+
+def make_ai_thumbnail(bg, text, lang, out, W, H):
+    """AI background + big bold yellow text (classic high-CTR YouTube style)."""
+    font = FONTS.get(lang, "Noto Sans")
+    words = clean_ass(text or "").upper().split() if lang == "en" else clean_ass(text or "").split()
+    if len(words) > 3:
+        half = math.ceil(len(words) / 2)
+        txt = " ".join(words[:half]) + "\\N" + " ".join(words[half:])
+    else:
+        txt = " ".join(words)
+    ass = WORK / "thumb.ass"
+    ass.write_text(
+        f"[Script Info]\nScriptType: v4.00+\nPlayResX: {W}\nPlayResY: {H}\nWrapStyle: 2\n\n"
+        "[V4+ Styles]\nFormat: Name,Fontname,Fontsize,PrimaryColour,SecondaryColour,OutlineColour,"
+        "BackColour,Bold,Italic,Underline,StrikeOut,ScaleX,ScaleY,Spacing,Angle,BorderStyle,"
+        "Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding\n"
+        f"Style: T,{font},{int(H * 0.13)},&H0000E6FF,&H000000FF,&H00000000,&H80000000,"
+        "1,0,0,0,100,100,0,0,1,12,4,2,50,50,55,1\n\n"
+        "[Events]\nFormat: Layer,Start,End,Style,Name,MarginL,MarginR,MarginV,Effect,Text\n"
+        f"Dialogue: 0,0:00:00.00,0:00:10.00,T,,0,0,0,,{txt}\n", encoding="utf-8")
+    vf = (f"scale={W}:{H}:force_original_aspect_ratio=increase,crop={W}:{H},"
+          "eq=contrast=1.15:saturation=1.35,"
+          "drawbox=x=0:y=ih*0.60:w=iw:h=ih*0.40:color=black@0.28:t=fill,"
+          f"ass={ass}")
+    ff("-i", str(bg), "-vf", vf, "-frames:v", "1", "-q:v", "2", out)
+
+
 def make_thumbnail(video, text, lang, out, W, H):
     font = FONTS.get(lang, "Noto Sans")
     words = clean_ass(text or "").upper().split() if lang == "en" else clean_ass(text or "").split()
@@ -1052,8 +1103,15 @@ def main():
                  W, H, quality, tune)
 
     # 9. thumbnail (frame from the hook scene, so no captions in it)
-    make_thumbnail(scene_files[0], plan.get("thumbnail_text") or plan.get("title", ""),
-                   lang, OUT / "thumbnail.jpg", W, H)
+    thumb_text = plan.get("thumbnail_text") or plan.get("title", "")
+    thumb_out = OUT / "thumbnail.jpg"
+    bg = ai_thumbnail_bg(plan) if plan.get("ai_images") else None
+    if bg:
+        make_ai_thumbnail(bg, thumb_text, lang, thumb_out, W, H)
+        print("thumbnail: AI background generated", flush=True)
+    else:
+        make_thumbnail(scene_files[0], thumb_text, lang, thumb_out, W, H)
+        print("thumbnail: scene frame (AI background unavailable)", flush=True)
     print("done", flush=True)
 
 
