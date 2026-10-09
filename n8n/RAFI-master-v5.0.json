@@ -212,7 +212,7 @@
        "id": "s6",
        "name": "words_per_scene",
        "type": "number",
-       "value": "={{ (() => { const m = String($json.PROMPT || '').match(/^\\s*SCENE\\s+\\d+/gim); const n = m ? m.length : 0; const mins = Math.min(Math.max(parseFloat(String($json.DURATION || '10')) || 10, 1), 15); return n >= 3 ? Math.min(Math.max(Math.round(mins * 60 * 2.3 / n), 15), 140) : 60; })() }}"
+       "value": "={{ (() => { const m = String($json.PROMPT || '').match(/^\\s*SCENE\\s+\\d+/gim); const n = m ? m.length : 0; const mins = Math.min(Math.max(parseFloat(String($json.DURATION || '10')) || 10, 1), 15); return n >= 3 ? Math.min(Math.max(Math.round(mins * 60 * 2.6 / n), 15), 140) : Math.min(Math.max(Math.round(mins * 60 * 2.6 / Math.max(3, Math.round(mins * 60 / 25))), 15), 140); })() }}"
       },
       {
        "id": "s7",
@@ -1388,6 +1388,102 @@
    "position": [
     -208,
     432
+   ]
+  },
+  {
+   "parameters": {
+    "content": "## 🎬 RAFI Master v5.0\n\n**5-minute (1-15 min) AI video factory.**\n\n1. Google Sheet e PROMPT + DURATION + STYLE likhe row add koro\n2. Workflow 3 ghonta por por sheet check kore, ba manually 'Start manually' chalao\n3. Video ban automatic: script → clips → voice → render → Drive\n\n**Setup:** pexels_key + pixabay_key **Video settings** node e. Details: repo te **SETUP.md**\n\n⚠️ Purano workflows deactivate koro!",
+    "height": 300,
+    "width": 360,
+    "color": 4
+   },
+   "id": "note-start",
+   "name": "📖 START HERE",
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1,
+   "position": [
+    -7448,
+    4
+   ]
+  },
+  {
+   "parameters": {
+    "content": "## Gemini 2-part script\n\nLomba script LLM truncate kore — tai **A → B → Merge**.\nScene count < 80% hole auto-retry.\n\nPratek scene: narration + keywords + alt_keywords + **image_prompt**",
+    "height": 260,
+    "width": 300,
+    "color": 6
+   },
+   "id": "note-script",
+   "name": "✍️ SCRIPT (2-part)",
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1,
+   "position": [
+    -5872,
+    -92
+   ]
+  },
+  {
+   "parameters": {
+    "content": "## Vul hobar chance NAI\n\n**QA 1:** scene e keyword/image_prompt na thakle narration theke auto-banay\n**QA 2:** clip na paile AI image option curator ke dekhay\n**QA 3:** render er age final gate — copyright-free URL whitelist + scene validation\n**QA 4:** download howa file real video kina verify kore",
+    "height": 320,
+    "width": 300,
+    "color": 3
+   },
+   "id": "note-qa",
+   "name": "🛡️ QA GATES (4 ta)",
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1,
+   "position": [
+    -4656,
+    -92
+   ]
+  },
+  {
+   "parameters": {
+    "content": "## Cascading search\n\n**Video:** Pexels → Pixabay → Wikimedia\n**Photo:** Wikimedia → Pexels → Pixabay\n**Guaranteed:** AI image (Pollinations/Gemini)\n\nSob license-free. Gemini curator best match beche.",
+    "height": 280,
+    "width": 320,
+    "color": 5
+   },
+   "id": "note-clips",
+   "name": "🔍 CLIP SEARCH (6 source)",
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1,
+   "position": [
+    -4480,
+    -92
+   ]
+  },
+  {
+   "parameters": {
+    "content": "## ffmpeg render, FREE\n\nGitHub Actions e 1080p render.\nedge-tts voice + Nano Banana Pro/3.1 Flash AI images + Veo 3.1 hero clips (Google Flow engine) + Ken Burns.\n\n**Duration Guard:** 5 min target hole video 5 min e hobei — voice slow + calm ending.\n\n~20-30 min pore release e video ashe",
+    "height": 300,
+    "width": 320,
+    "color": 7
+   },
+   "id": "note-render",
+   "name": "⚙️ RENDER (GitHub Actions)",
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1,
+   "position": [
+    -2416,
+    -92
+   ]
+  },
+  {
+   "parameters": {
+    "content": "## Auto-save\n\n✅ Drive (alada alada folder)\n✅ Sheet e link + status\n✅ YouTube pack doc (title/desc/tags)\n✅ Thumbnail Drive e\n⬜ YouTube upload + Telegram (optional)",
+    "height": 280,
+    "width": 320,
+    "color": 2
+   },
+   "id": "note-save",
+   "name": "💾 SAVE & PUBLISH",
+   "type": "n8n-nodes-base.stickyNote",
+   "typeVersion": 1,
+   "position": [
+    -336,
+    36
    ]
   }
  ],
