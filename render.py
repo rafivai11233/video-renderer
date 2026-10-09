@@ -78,6 +78,10 @@ ANIMATION_STYLE_LINE = ("Modern 3D animated explainer style, soft lighting, glos
                         "materials, cinematic depth, high quality render, 16:9")
 PODCAST_STYLE_LINE = ("Cozy modern podcast studio illustration, warm lighting, "
                      "microphones, high quality 2D cartoon TV series style, 16:9")
+TWOD_STYLE_LINE = ("Modern flat 2D vector illustration, bold clean shapes, vivid flat "
+                   "colors, subtle gradients, smooth minimalist design, high quality, 16:9")
+THREED_STYLE_LINE = ("High-quality stylized 3D render, Pixar-like character design, soft "
+                     "global illumination, cinematic depth of field, ultra detailed, 16:9")
 
 
 # ----------------------------------------------------------------- helpers
@@ -124,7 +128,7 @@ def best_quality(plan):
 
 
 def is_cartoonish(style):
-    return style in ("cartoon", "cartoon-podcast", "animation", "podcast")
+    return style in ("cartoon", "cartoon-podcast", "animation", "podcast", "2d", "3d")
 
 
 def scene_text(scene):
@@ -394,6 +398,8 @@ def build_scene_images(plan, refs):
                   "cartoon-podcast": CARTOON_STYLE_LINE,
                   "animation": ANIMATION_STYLE_LINE,
                   "podcast": PODCAST_STYLE_LINE,
+                  "2d": TWOD_STYLE_LINE,
+                  "3d": THREED_STYLE_LINE,
                   "documentary": "Photorealistic cinematic documentary photograph, natural lighting, rich color, high detail.",
                   "presenter": "Photorealistic cinematic photograph, warm professional lighting, high detail."}.get(style, CARTOON_STYLE_LINE)
     chars = [c for c in plan.get("characters", []) if c.get("name")]
@@ -794,6 +800,10 @@ def ai_thumbnail_bg(plan):
     if style in ("cartoon", "cartoon-podcast"):
         look = ("Bold colorful cartoon illustration, thick outlines, vivid flat colors, "
                 "expressive characters, playful energy")
+    elif style == "2d":
+        look = "Modern flat 2D vector illustration, bold clean shapes, vivid colors"
+    elif style == "3d":
+        look = "High-quality stylized 3D render, Pixar-like characters, soft cinematic lighting"
     elif style == "animation":
         look = "Modern flat vector illustration, clean shapes, vivid colors"
     elif style == "podcast":
