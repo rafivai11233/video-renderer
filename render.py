@@ -994,6 +994,43 @@ def main():
     silence = WORK / "silence.wav"
     ff("-f", "lavfi", "-i", f"anullsrc=r=48000:cl=stereo", "-t", f"{LINE_GAP:.3f}", silence)
     slots, speech_units, wavs = [], [], []
+
+    # ---- DURATION GUARD: hit plan.target_minutes even if the script ran short.
+    # 1) gently slow the raw TTS (up to +15%, inaudible) BEFORE slots are computed
+    #    so voice and visuals stay perfectly in sync,
+    # 2) later, extend the final scene (calm music ending) for the rest.
+    target = float(plan.get("target_minutes", 0) or 0) * 60
+    if target >= 60:
+        est = 0.0
+        for i in range(n):
+            if dialogue and scenes[i].get("lines"):
+                for j in range(len(scenes[i]["lines"])):
+                    est += probe(WORK / f"t{i:03d}_{j:03d}.mp3")
+                    est += LINE_GAP if j else 0.0
+            else:
+                est += probe(WORK / f"v{i:03d}.mp3")
+            est += GAP
+        if 1 < est < target:
+            need = target / est
+            if need <= 1.15:
+                tempo = 1 / need
+                print(f"DURATION GUARD: script {est/60:.1f} min vs target {target/60:.1f} min"
+                      f" -> slowing voice by {100 * (need - 1):.0f}%", flush=True)
+                for i in range(n):
+                    if dialogue and scenes[i].get("lines"):
+                        for j in range(len(scenes[i]["lines"])):
+                            mp3 = WORK / f"t{i:03d}_{j:03d}.mp3"
+                            tmp = Path(str(mp3) + ".tmp.mp3")
+                            ff("-i", mp3, "-af", f"atempo={tempo:.4f}", tmp)
+                            tmp.replace(mp3)
+                    else:
+                        mp3 = WORK / f"v{i:03d}.mp3"
+                        tmp = Path(str(mp3) + ".tmp.mp3")
+                        ff("-i", mp3, "-af", f"atempo={tempo:.4f}", tmp)
+                        tmp.replace(mp3)
+            else:
+                print(f"DURATION GUARD: script much shorter than target"
+                      f" ({est/60:.1f} vs {target/60:.1f} min) - keeping natural pace", flush=True)
     for i in range(n):
         s = scenes[i]
         final_wav = WORK / f"sv{i:03d}.wav"
@@ -1042,6 +1079,13 @@ def main():
     ff("-f", "concat", "-safe", "0", "-i", lst, "-c", "copy", voice_all)
     total = sum(slots) / FPS
     starts = [sum(slots[:i]) / FPS for i in range(n)]
+    # ---- DURATION GUARD part 2: calm music ending on the final scene
+    if target >= 60 and total < target * 0.985:
+        pad = min(target - total, 150.0)
+        slots[-1] += int(round(pad * FPS))
+        total = sum(slots) / FPS
+        starts = [sum(slots[:i]) / FPS for i in range(n)]
+        print(f"DURATION GUARD: +{pad:.0f}s calm ending -> {total/60:.1f} min", flush=True)
     print(f"total length {total:.1f}s ({total / 60:.1f} min)", flush=True)
 
     # 3. AI images (consistent characters for cartoons; smart fallback for the rest)
