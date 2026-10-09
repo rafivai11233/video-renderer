@@ -50,7 +50,6 @@
      ]
     },
     "jsonOutput": true,
-    "builtInTools": {},
     "options": {
      "maxOutputTokens": 32768
     }
@@ -483,12 +482,9 @@
     "messages": {
      "values": [
       {
-       "content": "=You are a research assistant for a YouTube documentary channel.\nTopic: {{ $json.PROMPT }}\n\nUse Google Search to collect 15 accurate, specific and interesting facts, dates, numbers, surprising details and short true stories about this topic.\nRules: plain text, one fact per line, English, no opinions, no marketing. Add (unsure) after any fact you could not confirm. If the topic is fiction, a story or a how-to, list the key points and the best examples instead. Maximum 400 words."
+       "content": "=You are a research assistant for a YouTube documentary channel.\nTopic: {{ $json.PROMPT }}\n\nFrom your own knowledge, collect 15 accurate, specific and interesting facts, dates, numbers, surprising details and short true stories about this topic.\nRules: plain text, one fact per line, English, no opinions, no marketing. Add (unsure) after any fact you could not confirm. If the topic is fiction, a story or a how-to, list the key points and the best examples instead. Maximum 400 words."
       }
      ]
-    },
-    "builtInTools": {
-     "googleSearch": true
     },
     "options": {
      "maxOutputTokens": 4096
@@ -592,7 +588,6 @@
      ]
     },
     "jsonOutput": true,
-    "builtInTools": {},
     "options": {
      "maxOutputTokens": 4096
     }
@@ -835,7 +830,6 @@
      ]
     },
     "jsonOutput": true,
-    "builtInTools": {},
     "options": {
      "maxOutputTokens": 8192,
      "temperature": 0.2,
@@ -1116,7 +1110,6 @@
      ]
     },
     "jsonOutput": true,
-    "builtInTools": {},
     "options": {
      "maxOutputTokens": 32768
     }
