@@ -38,9 +38,9 @@
    "parameters": {
     "modelId": {
      "__rl": true,
-     "cachedResultName": "models/gemini-2.5-flash",
+     "cachedResultName": "models/gemini-flash-latest",
      "mode": "list",
-     "value": "models/gemini-2.5-flash"
+     "value": "models/gemini-flash-latest"
     },
     "messages": {
      "values": [
@@ -475,9 +475,9 @@
    "parameters": {
     "modelId": {
      "__rl": true,
-     "cachedResultName": "models/gemini-2.5-flash",
+     "cachedResultName": "models/gemini-flash-latest",
      "mode": "list",
-     "value": "models/gemini-2.5-flash"
+     "value": "models/gemini-flash-latest"
     },
     "messages": {
      "values": [
@@ -576,9 +576,9 @@
    "parameters": {
     "modelId": {
      "__rl": true,
-     "cachedResultName": "models/gemini-2.5-flash-lite",
+     "cachedResultName": "models/gemini-flash-lite-latest",
      "mode": "list",
-     "value": "models/gemini-2.5-flash-lite"
+     "value": "models/gemini-flash-lite-latest"
     },
     "messages": {
      "values": [
@@ -818,9 +818,9 @@
    "parameters": {
     "modelId": {
      "__rl": true,
-     "cachedResultName": "models/gemini-2.5-flash",
+     "cachedResultName": "models/gemini-flash-latest",
      "mode": "list",
-     "value": "models/gemini-2.5-flash"
+     "value": "models/gemini-flash-latest"
     },
     "messages": {
      "values": [
@@ -1098,9 +1098,9 @@
    "parameters": {
     "modelId": {
      "__rl": true,
-     "cachedResultName": "models/gemini-2.5-flash",
+     "cachedResultName": "models/gemini-flash-latest",
      "mode": "list",
-     "value": "models/gemini-2.5-flash"
+     "value": "models/gemini-flash-latest"
     },
     "messages": {
      "values": [
