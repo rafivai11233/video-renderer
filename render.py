@@ -40,8 +40,17 @@ WORK = Path("work")
 OUT = Path("out")
 
 GEMINI_KEY = os.environ.get("GEMINI_API_KEY", "").strip()
-IMAGE_MODELS = [os.environ.get("GEMINI_IMAGE_MODEL", "gemini-2.5-flash-image"),
-                "gemini-2.5-flash-image-preview"]
+# Newest-first cascade: Nano Banana Pro -> Gemini 3.1 Flash Image -> classic.
+# Any model that is 404/429/paid for this key is skipped automatically.
+IMAGE_MODELS = [m for m in (os.environ.get("GEMINI_IMAGE_MODEL", ""),
+                "gemini-3.1-flash-image",            # Nano Banana 2.1 flash
+                "nano-banana-pro-preview",           # Nano Banana Pro (best)
+                "gemini-3.1-flash-lite-image",       # lighter, higher quota
+                "gemini-2.5-flash-image",            # classic Nano Banana
+                "gemini-2.5-flash-image-preview") if m]
+VEO_MODELS = [m for m in (os.environ.get("VEO_MODEL", ""),
+              "veo-3.1-fast-generate-preview", "veo-3.1-lite-generate-preview",
+              "veo-3.1-generate-preview") if m]
 HF_TOKEN = os.environ.get("HF_API_TOKEN", "").strip()
 HF_IMAGE_MODELS = ["black-forest-labs/FLUX.1-schnell", "stabilityai/stable-diffusion-xl-base-1.0"]
 POLLINATIONS_MODELS = ["flux", "turbo"]   # always free, no key, no account needed
@@ -317,6 +326,63 @@ def ai_image(prompt, ref_pngs, out_png, seed=None):
     if huggingface_image(prompt, out_png):
         return True
     return pollinations_image(prompt, out_png, seed=seed)
+
+
+def veo_clip(prompt, out_mp4, aspect="16:9", max_wait=420):
+    """Optional: generate a short hero VIDEO clip with Veo 3.1 (Google Flow
+    engine). Uses the free tier when the key allows; on any quota/permission
+    error returns False instantly so the render falls back to AI images."""
+    if not GEMINI_KEY:
+        return False
+    for model in VEO_MODELS:
+        try:
+            r = requests.post(
+                f"https://generativelanguage.googleapis.com/v1beta/models/{model}:predictLongRunning",
+                params={"key": GEMINI_KEY},
+                json={"instances": [{"prompt": prompt[:900]}],
+                      "parameters": {"aspectRatio": aspect}},
+                timeout=90)
+            if r.status_code in (404, 403, 429, 400):
+                continue                      # model unavailable/paid - next
+            r.raise_for_status()
+            op = (r.json() or {}).get("name", "")
+            if not op:
+                continue
+            t0 = time.time()
+            while time.time() - t0 < max_wait:
+                time.sleep(20)
+                o = requests.get(
+                    f"https://generativelanguage.googleapis.com/v1beta/{op}",
+                    params={"key": GEMINI_KEY}, timeout=60)
+                if o.status_code != 200:
+                    continue
+                oj = o.json()
+                if not oj.get("done"):
+                    continue
+                resp = oj.get("response", {})
+                gvr = resp.get("generateVideoResponse") or resp
+                samples = (gvr.get("generatedSamples")
+                           or gvr.get("generated_videos")
+                           or gvr.get("videos") or [])
+                uri = None
+                for s_ in samples:
+                    v = s_.get("video", {}) if isinstance(s_, dict) else {}
+                    uri = v.get("uri") or v.get("url") or s_.get("uri")
+                    if uri:
+                        break
+                if not uri:
+                    break                     # finished but no sample (filter)
+                dl = uri + ("&" if "?" in uri else "?") + "key=" + GEMINI_KEY
+                d = requests.get(dl, timeout=300)
+                d.raise_for_status()
+                Path(out_mp4).write_bytes(d.content)
+                print(f"VEO hero clip OK ({model})", flush=True)
+                return True
+            break                              # waited too long - give up on Veo
+        except Exception as e:  # noqa: BLE001
+            print(f"veo skip ({model}): {str(e)[:120]}", flush=True)
+            continue
+    return False
 
 
 def gemini_image(prompt, ref_pngs, out_png, tries=3):
@@ -1026,9 +1092,21 @@ def main():
         # animation-typed scene (abstract idea): AI image beats stock footage
         if img is None and clips and str(s.get("visual_type", "")).lower() == "animation" and images.get(i):
             img = images.get(i)
-        # nothing at all for this scene: its own AI image, else borrow
+        # nothing at all for this scene: try a VEO hero clip (Google Flow
+        # engine, free tier) first, then its own AI image, else borrow
         if img is None and not clips and not photo_by_scene.get(i):
-            if images.get(i):
+            veo_budget = (int(plan.get("veo_heroes", 3))
+                          if str(plan.get("style", "")).lower()
+                          in ("3d", "cartoon", "cartoon-podcast", "animation",
+                              "2d", "podcast") else 0)
+            veo_file = WORK / f"veo{i:03d}.mp4"
+            if (len(veo_used) < veo_budget
+                    and veo_clip(str(s.get("image_prompt", ""))[:500]
+                                  or scene_text(s)[:500],
+                                  veo_file, "16:9" if W > H else "9:16")):
+                veo_used.add(i)
+                clips = [veo_file]      # hero clip becomes the scene
+            elif images.get(i):
                 img = images.get(i)
             elif img_pool:
                 img = img_pool[i % len(img_pool)]
@@ -1047,6 +1125,7 @@ def main():
             make_scene([], frames, f, W, H, bg_blur, C0, C1, quality)
         return f
 
+    veo_used = set()
     with ThreadPoolExecutor(3) as ex:
         scene_files = list(ex.map(build_one, range(n)))
 
