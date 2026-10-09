@@ -1,0 +1,1966 @@
+{
+ "name": "RAFI Master v5.0 - 5min AI Video Pipeline (QA-guarded)",
+ "nodes": [
+  {
+   "parameters": {},
+   "id": "0f704c30-63e3-49a7-ac39-3cd56e3235f7",
+   "name": "Start manually",
+   "type": "n8n-nodes-base.manualTrigger",
+   "typeVersion": 1,
+   "position": [
+    -7408,
+    304
+   ]
+  },
+  {
+   "parameters": {
+    "documentId": {
+     "__rl": true,
+     "mode": "list",
+     "value": ""
+    },
+    "sheetName": {
+     "__rl": true,
+     "mode": "list",
+     "value": ""
+    }
+   },
+   "id": "b3230e60-8572-4f08-94e5-f6c50314233a",
+   "name": "Read prompts",
+   "type": "n8n-nodes-base.googleSheets",
+   "typeVersion": 4.7,
+   "position": [
+    -7120,
+    208
+   ]
+  },
+  {
+   "parameters": {
+    "modelId": {
+     "__rl": true,
+     "cachedResultName": "models/gemini-2.5-flash",
+     "mode": "list",
+     "value": "models/gemini-2.5-flash"
+    },
+    "messages": {
+     "values": [
+      {
+       "content": "=You are a senior YouTube scriptwriter AND a documentary video editor. You write narration that keeps viewers watching to the end, and for every scene you decide exactly what the viewer should SEE.\n\nVideo brief (read every line carefully and follow all instructions, structure, language, length and style it contains; if the brief conflicts with the defaults below, the brief wins):\n{{ $('Video settings').first().json.PROMPT }}\n\nAudience: {{ $('Video settings').first().json.audience }}\nStyle: {{ $('Video settings').first().json.style }}\nTarget length: {{ $('Video settings').first().json.target_minutes }} minutes, split into exactly {{ $('Video settings').first().json.scene_count }} scenes total.\nThis long script is written in TWO parts. In THIS first part write ONLY the FIRST half of the scenes (scenes 1 to {{ Math.ceil($('Video settings').first().json.scene_count / 2) }}). If the brief lists numbered scenes (SCENE 1, SCENE 2, ...): in this first part cover ONLY the first half of the listed scenes. A second call will write the remaining scenes. Do not stop early and do not summarize: every scene assigned to this part gets its FULL output.\n\nVerified research notes (use these facts first and do not invent beyond them; if the notes are empty speak in general terms):\n{{ ($('Research').first().json.content?.parts?.[0]?.text || 'No research notes available.').slice(0, 6000) }}\n\nReturn ONLY valid compact JSON in exactly this shape:\n{\"title\":\"...\",\"thumbnail_text\":\"...\",\"language\":\"...\",\"music_mood\":\"...\",\"scenes\":[{\"narration\":\"...\",\"keywords\":\"...\",\"alt_keywords\":\"...\",\"visual\":\"...\",\"queries\":[\"...\",\"...\",\"...\",\"...\"],\"text\":\"...\",\"visual_type\":\"footage\",\"image_prompt\":\"...\"}]}\n\nFields:\n- title: under 70 characters, curiosity-driven but honest, in the video language.\n- thumbnail_text: 3 or 4 powerful words in the video language.\n- language: two-letter code of the narration language (en, bn, hi, ur or ar).\n- music_mood: exactly one of calm, dramatic, uplifting, mysterious, inspiring.\n\nStructure:\n- If the brief lists numbered scenes (SCENE 1, SCENE 2, ...), write exactly one output scene per listed scene, in the same order, covering the points of that scene. Use the visual description of each scene to choose its visual fields.\n- Otherwise: scene 1 is the hook (a surprising fact, bold question or tiny story, no greeting), scenes 2 and 3 promise what the viewer will learn, the middle scenes are chapters (one idea, one concrete example, ending with a line that makes the viewer want the next scene), the second to last scene is a short recap and the last scene is the payoff plus one short call to subscribe.\n\nNarration rules:\n- Total spoken length must match the target length. Average {{ $('Video settings').first().json.words_per_scene }} words per scene. If the brief gives a time range for a scene, use about 2.3 spoken words per second of that range (for example a 50 second scene is about 115 words), never fewer than 25 words.\n- Write for the ear: short sentences, natural spoken language, varied rhythm, commas and full stops for pacing.\n- Text to speech safe: write numbers, dates and units in words, no abbreviations, no parentheses, no brackets, no braces, no emojis, no markdown, no lists, no scene numbers, no stage directions.\n- Never repeat the same fact or phrase in different scenes.\n- Stay truthful. Do not invent statistics, studies, names or quotes.\n- Write in the same language as the video brief. For Bangla use natural everyday spoken Bangla, not stiff literary style.\n\nVisual rules (these fields decide which footage the editor searches for, so they must match what the narration says at that moment):\n- visual: ONE English sentence describing the exact shot the camera should show while this scene is spoken: concrete, filmable, with place, subject and mood. Example: aerial view of a busy river port at sunrise with cargo boats.\n- queries: exactly 4 English stock-footage search phrases for that shot, ordered from most specific to most general: the first has 3 or 4 words, the second 2 or 3 words, the third 2 words, the fourth ONE word. Every phrase must be different. Concrete and filmable only, no abstract words, no names, no brands. Different scenes must use different queries.\n- keywords: 2 or 3 simple English words for the same shot. alt_keywords: ONE simpler English word for the same shot.\n- text: an on-screen key phrase of 2 to 4 words in the video language, shown as an animated title (a number, a name, a place or the key idea of the scene). Use it on about every second scene and leave it as an empty string on the others.\n- visual_type: use footage for almost every scene. Use animation ONLY when stock footage cannot show the idea (abstract ideas such as debt or inflation, ancient history, maps, imaginary or symbolic scenes), and at most one scene in four.\n- image_prompt: an English prompt of 25 to 40 words describing a single cinematic still image for this scene (subject, setting, lighting, camera angle). Used for animation scenes and when no good footage exists. The image must contain no text, no letters and no logos.\n\nEscape any double quote inside any field. Never put a curly brace inside any field. End the JSON properly with all closing brackets.\n\nCRITICAL: Do not stop early. Do not skip any scene assigned to this part. Every scene gets its full text and all its visual fields. End the JSON properly with all closing brackets."
+      }
+     ]
+    },
+    "jsonOutput": true,
+    "builtInTools": {},
+    "options": {
+     "maxOutputTokens": 32768
+    }
+   },
+   "id": "66ec33a6-1c70-4d88-ad70-4bc0f1fbd713",
+   "name": "Write script",
+   "type": "@n8n/n8n-nodes-langchain.googleGemini",
+   "typeVersion": 1.2,
+   "position": [
+    -5872,
+    208
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 5000,
+   "credentials": {
+    "googlePalmApi": {
+     "id": null,
+     "name": "Gateway credits",
+     "__aiGatewayManaged": true
+    }
+   }
+  },
+  {
+   "parameters": {
+    "url": "https://api.pexels.com/videos/search",
+    "options": {
+     "batching": {
+      "batch": {
+       "batchSize": 1,
+       "batchInterval": 800
+      }
+     },
+     "response": {
+      "response": {
+       "responseFormat": "json"
+      }
+     }
+    }
+   },
+   "id": "098b4b44-a55f-40fa-88c6-19575ad167f2",
+   "name": "Find Pexels clip",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -4480,
+    208
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 2000,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "inputDataFieldName": "video",
+    "name": "={{ $('Collect video plan').first().json.title.replace(/[\\\\/:*?\\\"<>|]/g, '').slice(0, 90) }}.mp4",
+    "driveId": {
+     "__rl": true,
+     "mode": "list",
+     "value": "My Drive"
+    },
+    "folderId": {
+     "__rl": true,
+     "mode": "id",
+     "value": "={{ $('Create video folder').first().json.id }}"
+    },
+    "options": {}
+   },
+   "id": "5457c7d1-e82e-4eb7-9b33-eea3206fc5d6",
+   "name": "Save video to Drive",
+   "type": "n8n-nodes-base.googleDrive",
+   "typeVersion": 3,
+   "position": [
+    -336,
+    336
+   ]
+  },
+  {
+   "parameters": {
+    "inputDataFieldName": "thumbnail",
+    "name": "={{ $('Collect video plan').first().json.title.replace(/[\\\\/:*?\\\"<>|]/g, '').slice(0, 90) }} - thumbnail.jpg",
+    "driveId": {
+     "__rl": true,
+     "mode": "list",
+     "value": "My Drive"
+    },
+    "folderId": {
+     "__rl": true,
+     "mode": "id",
+     "value": "={{ $('Create video folder').first().json.id }}"
+    },
+    "options": {}
+   },
+   "id": "61cc316c-2fab-43d0-9606-ae2dedc681cf",
+   "name": "Save thumbnail to Drive",
+   "type": "n8n-nodes-base.googleDrive",
+   "typeVersion": 3,
+   "position": [
+    112,
+    336
+   ]
+  },
+  {
+   "parameters": {
+    "rule": {
+     "interval": [
+      {
+       "field": "hours",
+       "hoursInterval": 3
+      }
+     ]
+    }
+   },
+   "id": "e92759d3-752b-48ef-8996-d98b91a3e0c2",
+   "name": "Every 3 hours",
+   "type": "n8n-nodes-base.scheduleTrigger",
+   "typeVersion": 1.3,
+   "position": [
+    -7408,
+    112
+   ]
+  },
+  {
+   "parameters": {
+    "assignments": {
+     "assignments": [
+      {
+       "id": "s1",
+       "name": "github_repo",
+       "type": "string",
+       "value": "rafivai11233/video-renderer"
+      },
+      {
+       "id": "s2",
+       "name": "voice_override",
+       "type": "string",
+       "value": "={{ $json.VOICE || '' }}"
+      },
+      {
+       "id": "s3",
+       "name": "voice_rate",
+       "type": "string",
+       "value": "={{ $json.RATE || '+0%' }}"
+      },
+      {
+       "id": "s4",
+       "name": "target_minutes",
+       "type": "number",
+       "value": "={{ Math.min(Math.max(parseFloat(String($json.DURATION || '10')) || 10, 1), 15) }}"
+      },
+      {
+       "id": "s5",
+       "name": "scene_count",
+       "type": "number",
+       "value": "={{ (() => { const m = String($json.PROMPT || '').match(/^\\s*SCENE\\s+\\d+/gim); const n = m ? m.length : 0; return n >= 3 ? n : Math.max(3, Math.round(Math.min(Math.max(parseFloat(String($json.DURATION || '10')) || 10, 1), 15) * 60 / 25)); })() }}"
+      },
+      {
+       "id": "s6",
+       "name": "words_per_scene",
+       "type": "number",
+       "value": "={{ (() => { const m = String($json.PROMPT || '').match(/^\\s*SCENE\\s+\\d+/gim); const n = m ? m.length : 0; const mins = Math.min(Math.max(parseFloat(String($json.DURATION || '10')) || 10, 1), 15); return n >= 3 ? Math.min(Math.max(Math.round(mins * 60 * 2.3 / n), 15), 140) : 60; })() }}"
+      },
+      {
+       "id": "s7",
+       "name": "style",
+       "type": "string",
+       "value": "={{ (() => { const k = String($json.STYLE || '').trim().toLowerCase(); const map = { documentary: 'documentary-style voiceover narration, engaging and cinematic', presenter: 'TALKING-HEAD presenter video: a passionate first-person speech talking directly to the camera', podcast: 'PODCAST-style video: a warm, reflective first-person monologue like a podcast episode', cartoon: 'FUNNY CARTOON STORY: folk-tale humour with comic timing, funny reactions and a light lesson at the end', animation: 'modern animated explainer: crisp, energetic, visually driven narration', '2d': 'FLAT 2D VECTOR STORY: clean modern flat illustration style, bold simple visuals, energetic narration', '3d': '3D ANIMATED STORY: Pixar-like stylized 3D world, expressive characters, cinematic narration' }; return map[k] || ($json.STYLE || 'cinematic documentary, warm, curious and engaging'); })() }}"
+      },
+      {
+       "id": "s8",
+       "name": "audience",
+       "type": "string",
+       "value": "={{ $json.AUDIENCE || 'general YouTube viewers' }}"
+      },
+      {
+       "id": "s10",
+       "name": "resolution",
+       "type": "string",
+       "value": "={{ String($json.RESOLUTION || (/1080x1920|1920x1080/.test(String($json.PROMPT || '')) ? '1080' : '720')) }}"
+      },
+      {
+       "id": "s11",
+       "name": "format",
+       "type": "string",
+       "value": "={{ $json.FORMAT || (/9:16|vertical/i.test(String($json.PROMPT || '')) ? '9:16' : '16:9') }}"
+      },
+      {
+       "id": "s12",
+       "name": "music_volume",
+       "type": "number",
+       "value": 0.3
+      },
+      {
+       "id": "s13",
+       "name": "captions",
+       "type": "boolean",
+       "value": true
+      },
+      {
+       "id": "s14",
+       "name": "pexels_key",
+       "type": "string",
+       "value": ""
+      },
+      {
+       "id": "s15",
+       "name": "github_ref",
+       "type": "string",
+       "value": "v22"
+      },
+      {
+       "id": "pixabay-key-v42",
+       "name": "pixabay_key",
+       "value": "57809168-4026c77a3ed2502dd21b253c7",
+       "type": "string"
+      }
+     ]
+    },
+    "includeOtherFields": true,
+    "options": {}
+   },
+   "id": "1aef63a3-01e7-480e-a24a-ee0486050094",
+   "name": "Video settings",
+   "type": "n8n-nodes-base.set",
+   "typeVersion": 3.4,
+   "position": [
+    -6672,
+    208
+   ],
+   "notes": "Edit github_repo. Optional: voice_override (e.g. en-US-BrianMultilingualNeural, bn-BD-PradeepNeural), voice_rate (e.g. -5%)."
+  },
+  {
+   "parameters": {
+    "jsCode": "const src = $('Only rows without video').first().json;\nconst cfg = $('Video settings').first().json;\nconst res = $input.first().json;\nconst BS = String.fromCharCode(92);\n\nconst ws = (t) => Array.from(String(t == null ? '' : t)).map(c => (c.charCodeAt(0) <= 32 ? ' ' : c)).join('').split(' ').filter(Boolean).join(' ');\nconst strip = (t, open, close) => { let out = '', depth = 0; for (const ch of String(t == null ? '' : t)) { if (ch === open) depth++; else if (ch === close) { if (depth > 0) depth--; else out += ch; } else if (depth === 0) out += ch; } return out; };\nconst noBraces = (t) => String(t == null ? '' : t).split('{').join(' ').split('}').join(' ');\nconst clean = (v, max) => ws(noBraces(v).split('\"').join(' ').split(BS).join(' ')).slice(0, max);\n\nlet data = null;\nif (res && Array.isArray(res.scenes)) {\n  data = res;\n} else {\n  let raw = res.content?.parts?.[0]?.text ?? res.parts?.[0]?.text ?? res.text ?? res.output ?? '';\n  if (typeof raw !== 'string') raw = JSON.stringify(raw);\n  raw = raw.split('```json').join('').split('```').join('').trim();\n  try {\n    data = JSON.parse(raw);\n  } catch (e) {\n    const found = [];\n    const re = /[{][^{}]*\"narration\"[^{}]*[}]/g;\n    let m;\n    while ((m = re.exec(raw)) !== null) { try { found.push(JSON.parse(m[0])); } catch (_) {} }\n    const pick = (k) => {\n      const i = raw.indexOf('\"' + k + '\"');\n      if (i < 0) return '';\n      let j = raw.indexOf(':', i);\n      if (j < 0) return '';\n      j = raw.indexOf('\"', j);\n      if (j < 0) return '';\n      let out = '';\n      for (let p = j + 1; p < raw.length; p++) {\n        const ch = raw[p];\n        if (ch === BS) { out += raw[p + 1] || ''; p++; continue; }\n        if (ch === '\"') break;\n        out += ch;\n      }\n      return out;\n    };\n    data = { title: pick('title'), thumbnail_text: pick('thumbnail_text'), language: pick('language') || 'en', music_mood: pick('music_mood'), scenes: found };\n  }\n}\n\nconst scenes = (data.scenes || []).map(s => {\n  const kw = ws(s.keywords || 'nature landscape');\n  const alt = ws(s.alt_keywords || String(s.keywords || 'nature').split(' ')[0] || 'nature');\n  const queries = (Array.isArray(s.queries) ? s.queries : []).map(q => clean(q, 60)).filter(Boolean).slice(0, 5);\n  return {\n    narration: ws(noBraces(strip(strip(s.narration, '(', ')'), '[', ']'))),\n    keywords: kw,\n    alt_keywords: alt,\n    visual: clean(s.visual, 160),\n    queries: queries.length ? queries : [kw, alt].filter(Boolean),\n    text: clean(s.text, 40),\n    visual_type: String(s.visual_type || '').toLowerCase() === 'animation' ? 'animation' : 'footage',\n    image_prompt: clean(s.image_prompt, 220)\n  };\n}).filter(s => s.narration.length > 20);\n\nconst want = Number(cfg.scene_count) || 0;\nif (scenes.length < Math.max(3, Math.floor(want * 0.8))) {\n  throw new Error('Gemini returned ' + scenes.length + ' of ' + want + ' scenes (answer was cut off). It will retry on the next run.');\n}\n\nconst moods = ['calm', 'dramatic', 'uplifting', 'mysterious', 'inspiring'];\nconst mood = moods.includes(String(data.music_mood || '').toLowerCase()) ? String(data.music_mood).toLowerCase() : 'calm';\n\nreturn scenes.map((s, i) => ({ json: {\n  row_number: src.row_number,\n  prompt: src.PROMPT,\n  title: data.title || String(src.PROMPT).slice(0, 60),\n  thumbnail_text: data.thumbnail_text || '',\n  language: data.language || 'en',\n  music_mood: mood,\n  scene_idx: i,\n  narration: s.narration,\n  keywords: s.keywords,\n  alt_keywords: s.alt_keywords,\n  visual: s.visual,\n  queries: s.queries,\n  text: s.text,\n  visual_type: s.visual_type,\n  image_prompt: s.image_prompt\n} }));"
+   },
+   "id": "09782939-ee3d-471e-9337-c0ca6a67b84c",
+   "name": "Parse script",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -4816,
+    208
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "const scenes = $('Parse script').all();\nconst pool = $('Build clip candidates').first().json.pool || [];\nconst photopool = $('Build clip candidates').first().json.photos || [];\nconst cfg = $('Video settings').first().json;\nconst st = $('Studio settings').first().json;\nconst f = scenes[0].json;\nconst lang = String(f.language || 'en').toLowerCase().slice(0, 2);\nconst voices = { en: 'en-US-AndrewMultilingualNeural', bn: 'bn-BD-NabanitaNeural', hi: 'hi-IN-MadhurNeural', ur: 'ur-PK-AsadNeural', ar: 'ar-SA-HamedNeural' };\nconst voice = cfg.voice_override || voices[lang] || voices.en;\nconst hd = String(cfg.resolution) === '1080';\n\n// 1) Clips: the AI editor's picks first, then the best keyword matches\nlet picks = {}; let photoPicks = {};\ntry {\n  const res = $('Pick best clips').first().json;\n  let d = Array.isArray(res.scenes) ? res : null;\n  if (!d) {\n    let raw = res.content?.parts?.[0]?.text ?? res.text ?? res.output ?? '';\n    if (typeof raw !== 'string') raw = JSON.stringify(raw);\n    const m = raw.split('```json').join('').split('```').join('').match(/[{][^]*[}]/);\n    d = m ? JSON.parse(m[0]) : null;\n  }\n  for (const s of (d?.scenes || [])) {\n    picks[Number(s.i)] = (Array.isArray(s.picks) ? s.picks : []).map(Number).filter(n => Number.isInteger(n));\n    photoPicks[Number(s.i)] = (Array.isArray(s.photos) ? s.photos : []).map(Number).filter(n => Number.isInteger(n));\n  }\n} catch (e) { picks = {}; photoPicks = {}; }\n\nconst used = new Set();\nconst photoUsed = new Set();\nconst out = scenes.map((s, i) => {\n  const cands = pool[i] || [];\n  const picked = (picks[i] || []).map(j => cands[j]).filter(Boolean);\n  const curated = Object.prototype.hasOwnProperty.call(picks, i);\n  const rest = cands.filter(c => !picked.includes(c) && (!curated || c.score >= 3));\n  const list = [...picked, ...rest];\n  let clips = list.filter(c => !used.has(c.url)).slice(0, 3).map(c => c.url);\n  if (clips.length < 2) clips = clips.concat(list.filter(c => !clips.includes(c.url)).slice(0, 3 - clips.length).map(c => c.url));\n  clips.forEach(u => used.add(u));\n  const pcands = photopool[i] || [];\n  const ppicked = (photoPicks[i] || []).map(j => pcands[j]).filter(Boolean);\n  const plist = [...ppicked, ...pcands.filter(c => !ppicked.includes(c))];\n  let scene_photos = plist.filter(c => !photoUsed.has(c.url)).slice(0, 2).map(c => c.url);\n  scene_photos.forEach(u => photoUsed.add(u));\n  return {\n    narration: s.json.narration,\n    clips,\n    photos: scene_photos,\n    visual: s.json.visual || '',\n    queries: Array.isArray(s.json.queries) ? s.json.queries : [],\n    keywords: s.json.keywords || '',\n    alt_keywords: s.json.alt_keywords || '',\n    text: s.json.text || '',\n    visual_type: s.json.visual_type || 'footage',\n    image_prompt: s.json.image_prompt || ''\n  };\n});\n\n// scenes with no footage borrow from the nearest scene that has some\nfor (let i = 0; i < out.length; i++) {\n  if (out[i].clips.length) continue;\n  for (let d = 1; d < out.length; d++) {\n    const n = out[i - d]?.clips.length ? out[i - d] : out[i + d];\n    if (n && n.clips.length) { out[i].clips = n.clips.slice(0, 2); break; }\n  }\n}\n// The render always falls back to free Pollinations AI images (no key needed),\n// so an empty footage list is only fatal when AI images are also disabled.\nconst studioCanSearch = st.studio_vision !== false || st.studio_ai_images !== false;\nif (!out.some(s => s.clips.length) && !studioCanSearch) {\n  throw new Error('No stock clips found. Add a valid pexels_key and/or pixabay_key in the Video settings node.');\n}\n\n// 2) Duration: fit the speaking speed so the video matches the target length\nconst wordsOf = (t) => String(t || '').split(' ').filter(Boolean).length;\nconst totalWords = out.reduce((n, s) => n + wordsOf(s.narration), 0);\nconst wps = ({ en: 2.5, hi: 2.4, ur: 2.4, ar: 2.3, bn: 2.2 })[lang] || 2.4; // spoken words per second at normal speed\nconst targetSec = (Number(cfg.target_minutes) || 0) * 60;\nconst normalSec = totalWords / wps;\nconst userRate = !!cfg.voice_rate && cfg.voice_rate !== '+0%';\nlet rateNum = 0;\nif (!userRate && targetSec > 0) {\n  const adj = Math.round((normalSec / targetSec - 1) * 100);\n  rateNum = Math.abs(adj) < 4 ? 0 : Math.max(-25, Math.min(25, adj));\n}\nconst rate = userRate ? cfg.voice_rate : (rateNum >= 0 ? '+' : '') + rateNum + '%';\nconst estSec = normalSec / (1 + (userRate ? (parseInt(cfg.voice_rate, 10) || 0) : rateNum) / 100);\nif (targetSec > 0 && Math.abs(estSec / targetSec - 1) > 0.3) {\n  throw new Error('Script length is off: ' + totalWords + ' words is about ' + (estSec / 60).toFixed(1) + ' min, target is ' + (targetSec / 60) + ' min. Run again (the script is rewritten) or change DURATION.');\n}\n\nconst plan = {\n  job_id: 'v' + Date.now().toString(36) + 'r' + f.row_number,\n  voice, rate, language: lang,\n  resolution: hd ? '1080' : '720',\n  format: cfg.format || '16:9',\n  music_mood: f.music_mood, music_volume: Number(cfg.music_volume) || 0.3,\n  captions: cfg.captions !== false,\n  title: f.title, thumbnail_text: f.thumbnail_text,\n  resume_url: $execution.resumeUrl,\n  studio: {\n    vision: st.studio_vision !== false,\n    ai_images: st.studio_ai_images !== false,\n    max_ai_images: Number(st.studio_max_ai_images) >= 0 ? Number(st.studio_max_ai_images) : 8,\n    animations: st.studio_animations !== false,\n    sfx: st.studio_sfx !== false\n  },\n  ai_images: st.studio_ai_images !== false,\n  image_max: Number(st.studio_max_ai_images) >= 0 ? Number(st.studio_max_ai_images) : 8,\n  quality: 'best',\n  scenes: out\n};\nlet plan_json = JSON.stringify(plan);\n// GitHub accepts a limited input size: shrink the footage lists before giving up\nif (plan_json.length > 52000) {\n  plan.scenes = plan.scenes.map(s => ({ ...s, clips: s.clips.slice(0, 2), photos: (s.photos || []).slice(0, 1) }));\n  plan_json = JSON.stringify(plan);\n}\nif (plan_json.length > 60000) throw new Error('Plan too large for GitHub dispatch: ' + plan_json.length + '. Use a shorter DURATION or fewer scenes.');\n\nconst digest = out.map(s => String(s.narration).split(' ').slice(0, 18).join(' ')).join(' | ').slice(0, 3500);\nreturn [{ json: { job_id: plan.job_id, plan_json, github_repo: cfg.github_repo, github_ref: cfg.github_ref || 'v22', row_number: f.row_number, prompt: f.prompt, title: f.title, language: lang, digest, scene_count: out.length, voice, rate, est_seconds: Math.round(estSec), target_seconds: Math.round(targetSec), total_words: totalWords } }];"
+   },
+   "id": "c47860a3-267a-4d4e-a56c-2c7144419b71",
+   "name": "Collect video plan",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -3936,
+    208
+   ]
+  },
+  {
+   "parameters": {
+    "method": "POST",
+    "url": "=https://api.github.com/repos/{{ $('Collect video plan').first().json.github_repo }}/actions/workflows/render.yml/dispatches",
+    "authentication": "genericCredentialType",
+    "genericAuthType": "httpHeaderAuth",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Accept",
+       "value": "application/vnd.github+json"
+      },
+      {
+       "name": "X-GitHub-Api-Version",
+       "value": "2022-11-28"
+      },
+      {
+       "name": "User-Agent",
+       "value": "n8n"
+      }
+     ]
+    },
+    "sendBody": true,
+    "specifyBody": "json",
+    "jsonBody": "={{ JSON.stringify({ ref: $('Collect video plan').first().json.github_ref, inputs: { job_id: $('Collect video plan').first().json.job_id, plan: $('QA 3: final plan check').first().json.plan_json } }) }}",
+    "options": {}
+   },
+   "id": "e977d78d-889c-4d54-9cb9-2933e1ef0406",
+   "name": "Start render on GitHub",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -2416,
+    208
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 5000,
+   "onError": "continueErrorOutput",
+   "notes": "Attach a Header Auth credential: Name = Authorization, Value = Bearer <your GitHub token>."
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "combinator": "and",
+     "conditions": [
+      {
+       "id": "c2",
+       "leftValue": "={{ String($json.body?.status || 'timeout') }}",
+       "operator": {
+        "operation": "equals",
+        "type": "string"
+       },
+       "rightValue": "success"
+      }
+     ],
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "strict",
+      "version": 2
+     }
+    },
+    "options": {}
+   },
+   "id": "cc32a797-0a55-43d9-9b78-27b6e10c2703",
+   "name": "Render succeeded?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    -1072,
+    272
+   ]
+  },
+  {
+   "parameters": {
+    "errorMessage": "={{ (() => { try { const b = $('Parse run status').first().json.body; return 'GitHub render ' + (b.status === 'timeout' ? 'timed out after ~140 minutes' : 'ended with status: ' + b.status) + '. Open the run: ' + b.run_url; } catch (e) { return 'The GitHub render could not be started. Check the GitHub token and the repo name.'; } })() }}"
+   },
+   "id": "ba79f494-b014-4398-8203-6b19426786ca",
+   "name": "Stop: render failed",
+   "type": "n8n-nodes-base.stopAndError",
+   "typeVersion": 1,
+   "position": [
+    1280,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "url": "=https://api.github.com/repos/{{ $('Collect video plan').first().json.github_repo }}/releases/tags/{{ $('Collect video plan').first().json.job_id }}",
+    "authentication": "genericCredentialType",
+    "genericAuthType": "httpHeaderAuth",
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Accept",
+       "value": "application/vnd.github+json"
+      },
+      {
+       "name": "X-GitHub-Api-Version",
+       "value": "2022-11-28"
+      },
+      {
+       "name": "User-Agent",
+       "value": "n8n"
+      }
+     ]
+    },
+    "options": {}
+   },
+   "id": "0e1e511d-c3f4-42f9-80f1-0455d479cf13",
+   "name": "Get release",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -784,
+    432
+   ],
+   "retryOnFail": true,
+   "maxTries": 5,
+   "waitBetweenTries": 5000
+  },
+  {
+   "parameters": {
+    "url": "={{ ($('Get release').first().json.assets.find(a => a.name.endsWith('.mp4')) || $('Get release').first().json.assets[0]).browser_download_url }}",
+    "options": {
+     "response": {
+      "response": {
+       "responseFormat": "file",
+       "outputPropertyName": "video"
+      }
+     },
+     "timeout": 900000
+    }
+   },
+   "id": "574db314-f155-4d0d-947b-9b323eaa3028",
+   "name": "Download final video",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -560,
+    432
+   ],
+   "retryOnFail": true,
+   "maxTries": 5,
+   "waitBetweenTries": 5000
+  },
+  {
+   "parameters": {
+    "jsCode": "const empty = (v) => v === undefined || v === null || String(v).trim() === '';\n\n// The sheet headers may be written in any case (prompt / PROMPT, video / VIDEO ...).\n// Add an UPPERCASE copy of every column so the rest of the workflow always finds them.\nconst rows = $input.all().map(i => {\n  const o = { ...i.json };\n  for (const [k, v] of Object.entries(i.json)) {\n    if (k === 'row_number') continue;\n    const U = String(k).trim().toUpperCase();\n    if (!(U in o)) o[U] = v;\n  }\n  return o;\n});\n\n// Pressing 'Start manually' is a deliberate human action: it may take over a row stuck on 'processing'.\nlet manual = false;\ntry { manual = $('Start manually').isExecuted === true; } catch (e) { manual = false; }\n\n// A row stuck on 'processing' (run cancelled, n8n restarted, render crashed...) must never block the sheet.\n// Scheduled runs: 'processing <ISO time>' older than 2 hours (or with no time) counts as stale.\nconst STALE_MS = 2 * 60 * 60 * 1000;\nconst isStale = (status) => {\n  const s = String(status || '').trim().toLowerCase();\n  if (!s.startsWith('processing')) return false;\n  if (manual) return true;\n  const m = s.match(/\\d{4}-\\d{2}-\\d{2}t[\\d:.]+z/);\n  if (!m) return true;\n  const t = Date.parse(m[0].toUpperCase());\n  return isNaN(t) || (Date.now() - t) > STALE_MS;\n};\n\nconst ok = rows.filter(r =>\n  !empty(r.PROMPT) &&\n  empty(r.VIDEO) &&\n  (empty(r.STATUS) || String(r.STATUS).toLowerCase().startsWith('retry') || isStale(r.STATUS))\n);\n\n// Nothing to do is NOT an error: end the run quietly (no red node, no error mail).\nif (!ok.length) return [];\n\n// one video per run\nreturn ok.slice(0, 1).map(r => ({ json: r }));"
+   },
+   "id": "920ac742-f8db-4da7-a6c1-edc1810edec2",
+   "name": "Only rows without video",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -6896,
+    208
+   ],
+   "notes": "Picks ONE row: PROMPT filled, VIDEO empty, STATUS empty (or 'retry'). Rows marked processing/done/failed are skipped."
+  },
+  {
+   "parameters": {
+    "modelId": {
+     "__rl": true,
+     "cachedResultName": "models/gemini-2.5-flash",
+     "mode": "list",
+     "value": "models/gemini-2.5-flash"
+    },
+    "messages": {
+     "values": [
+      {
+       "content": "=You are a research assistant for a YouTube documentary channel.\nTopic: {{ $json.PROMPT }}\n\nUse Google Search to collect 15 accurate, specific and interesting facts, dates, numbers, surprising details and short true stories about this topic.\nRules: plain text, one fact per line, English, no opinions, no marketing. Add (unsure) after any fact you could not confirm. If the topic is fiction, a story or a how-to, list the key points and the best examples instead. Maximum 400 words."
+      }
+     ]
+    },
+    "builtInTools": {
+     "googleSearch": true
+    },
+    "options": {
+     "maxOutputTokens": 4096
+    }
+   },
+   "id": "f7cd4912-a7d4-4134-88a1-3d0665b5ece7",
+   "name": "Research",
+   "type": "@n8n/n8n-nodes-langchain.googleGemini",
+   "typeVersion": 1.2,
+   "position": [
+    -6224,
+    208
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 5000,
+   "credentials": {
+    "googlePalmApi": {
+     "id": null,
+     "name": "Gateway credits",
+     "__aiGatewayManaged": true
+    }
+   },
+   "onError": "continueRegularOutput",
+   "notes": "Gemini + Google Search grounding collects real facts so the script is accurate. If it fails the workflow continues without it."
+  },
+  {
+   "parameters": {
+    "url": "https://api.pexels.com/videos/search",
+    "options": {
+     "batching": {
+      "batch": {
+       "batchSize": 1,
+       "batchInterval": 800
+      }
+     },
+     "response": {
+      "response": {
+       "responseFormat": "json"
+      }
+     }
+    }
+   },
+   "id": "9e48c6cf-f4ad-42a1-870d-4c05efa93c37",
+   "name": "Find Pexels alt clip",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -4288,
+    208
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 2000,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "url": "https://commons.wikimedia.org/w/api.php",
+    "options": {
+     "batching": {
+      "batch": {
+       "batchSize": 1,
+       "batchInterval": 1200
+      }
+     },
+     "response": {
+      "response": {
+       "responseFormat": "json"
+      }
+     }
+    }
+   },
+   "id": "39eff368-a4cd-4e33-b71d-d57dc36f5f9a",
+   "name": "Find Wikimedia video",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -3904,
+    208
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 2000,
+   "onError": "continueRegularOutput",
+   "notes": "Optional second free footage library. Without pexels_key it just returns nothing and is ignored."
+  },
+  {
+   "parameters": {
+    "modelId": {
+     "__rl": true,
+     "cachedResultName": "models/gemini-2.5-flash-lite",
+     "mode": "list",
+     "value": "models/gemini-2.5-flash-lite"
+    },
+    "messages": {
+     "values": [
+      {
+       "content": "=You are a YouTube SEO expert.\nVideo title: {{ $json.title }}\nLanguage code: {{ $json.language }}\nScript digest: {{ $json.digest }}\n\nReturn ONLY valid compact JSON:\n{\"titles\":[\"...\",\"...\",\"...\"],\"description\":\"...\",\"tags\":[\"...\"],\"hashtags\":[\"...\"],\"pinned_comment\":\"...\"}\n\nRules:\n- titles: 3 different options, each under 70 characters, curiosity-driven but honest, in the video language.\n- description: 150 to 250 words in the video language. The first two lines hook the viewer and contain the main keyword. No timestamps, no fake claims, no links. End with a short subscribe line.\n- tags: 12 to 15 short tags, mix of English and the video language.\n- hashtags: exactly 3 words without the hash sign.\n- pinned_comment: one friendly question that makes viewers comment."
+      }
+     ]
+    },
+    "jsonOutput": true,
+    "builtInTools": {},
+    "options": {
+     "maxOutputTokens": 4096
+    }
+   },
+   "id": "b23cb69c-059f-48e2-a0d5-dba90896f6ba",
+   "name": "SEO pack",
+   "type": "@n8n/n8n-nodes-langchain.googleGemini",
+   "typeVersion": 1.2,
+   "position": [
+    -3488,
+    208
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 5000,
+   "credentials": {
+    "googlePalmApi": {
+     "id": null,
+     "name": "Gateway credits",
+     "__aiGatewayManaged": true
+    }
+   },
+   "onError": "continueRegularOutput",
+   "notes": "Gemini writes 3 titles, description, tags, hashtags, pinned comment."
+  },
+  {
+   "parameters": {
+    "jsCode": "const base = $('Collect video plan').first().json;\nconst res = $input.first().json;\nlet d = {};\nif (Array.isArray(res.titles)) {\n  d = res;\n} else {\n  let raw = res.content?.parts?.[0]?.text ?? res.text ?? res.output ?? '';\n  if (typeof raw !== 'string') raw = JSON.stringify(raw);\n  raw = raw.replace(/```json|```/g, '').trim();\n  try { d = JSON.parse(raw); } catch (e) {\n    const m = raw.match(/\\{[\\s\\S]*\\}/);\n    if (m) { try { d = JSON.parse(m[0]); } catch (_) {} }\n  }\n}\nconst titles = (Array.isArray(d.titles) ? d.titles : []).filter(t => typeof t === 'string' && t.length > 5 && t.length <= 95);\nconst tags = (Array.isArray(d.tags) ? d.tags : []).map(t => String(t).replace(/[#,]/g, '').trim()).filter(Boolean);\nlet tagStr = '';\nfor (const t of tags) { if ((tagStr + ',' + t).length > 450) break; tagStr += (tagStr ? ',' : '') + t; }\nconst hashtags = (Array.isArray(d.hashtags) ? d.hashtags : []).slice(0, 3).map(h => '#' + String(h).replace(/[#\\s]/g, '')).join(' ');\nconst description = [String(d.description || '').trim(), hashtags].filter(Boolean).join('\\n\\n');\nreturn [{ json: { title: titles[0] || base.title, description: description || base.title, tags: tagStr, pinned_comment: String(d.pinned_comment || '') } }];"
+   },
+   "id": "f3361ae2-8777-4b8d-a3c4-3e25044c1507",
+   "name": "Parse SEO",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -3136,
+    208
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "update",
+    "documentId": {
+     "__rl": true,
+     "cachedResultName": "Video Automation Prompts",
+     "mode": "list",
+     "value": "1fA5aG83SbcSR-GzOQlmlXU4ZBgMnYt0pidbPoLjE5ps"
+    },
+    "sheetName": {
+     "__rl": true,
+     "cachedResultName": "Sheet1",
+     "mode": "list",
+     "value": "gid=0"
+    },
+    "columns": {
+     "attemptToConvertTypes": false,
+     "convertFieldsToString": false,
+     "mappingMode": "autoMapInputData",
+     "matchingColumns": [
+      "row_number"
+     ],
+     "schema": [],
+     "value": null
+    },
+    "options": {}
+   },
+   "id": "7b935af3-3c7b-4134-b8bd-74e4b09f20b4",
+   "name": "Mark processing",
+   "type": "n8n-nodes-base.googleSheets",
+   "typeVersion": 4.7,
+   "position": [
+    -2640,
+    208
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "update",
+    "documentId": {
+     "__rl": true,
+     "cachedResultName": "Video Automation Prompts",
+     "mode": "list",
+     "value": "1fA5aG83SbcSR-GzOQlmlXU4ZBgMnYt0pidbPoLjE5ps"
+    },
+    "sheetName": {
+     "__rl": true,
+     "cachedResultName": "Sheet1",
+     "mode": "list",
+     "value": "gid=0"
+    },
+    "columns": {
+     "attemptToConvertTypes": false,
+     "convertFieldsToString": false,
+     "mappingMode": "autoMapInputData",
+     "matchingColumns": [
+      "row_number"
+     ],
+     "schema": [],
+     "value": null
+    },
+    "options": {}
+   },
+   "id": "8782a70a-2190-4f0e-9ffd-640b5b51b508",
+   "name": "Mark failed",
+   "type": "n8n-nodes-base.googleSheets",
+   "typeVersion": 4.7,
+   "position": [
+    1056,
+    0
+   ]
+  },
+  {
+   "parameters": {
+    "resource": "video",
+    "operation": "upload",
+    "title": "={{ $('Parse SEO').first().json.title }}",
+    "regionCode": "US",
+    "categoryId": "27",
+    "binaryProperty": "video",
+    "options": {
+     "description": "={{ $('Parse SEO').first().json.description }}",
+     "privacyStatus": "private",
+     "tags": "={{ $('Parse SEO').first().json.tags }}"
+    }
+   },
+   "id": "ae52e495-317f-46fe-bf44-7fc17062ec52",
+   "name": "Upload to YouTube (optional)",
+   "type": "n8n-nodes-base.youTube",
+   "typeVersion": 1,
+   "position": [
+    -336,
+    528
+   ],
+   "disabled": true,
+   "notes": "OFF by default. Connect YouTube OAuth, enable, keep 'private' for the first tests."
+  },
+  {
+   "parameters": {
+    "url": "={{ $('Get release').first().json.assets.find(a => a.name.endsWith('.jpg')).browser_download_url }}",
+    "options": {
+     "response": {
+      "response": {
+       "neverError": true,
+       "responseFormat": "file",
+       "outputPropertyName": "thumbnail"
+      }
+     },
+     "timeout": 120000
+    }
+   },
+   "id": "433bc8e0-7b51-4776-9ca5-e08f5635326b",
+   "name": "Download thumbnail",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -112,
+    336
+   ]
+  },
+  {
+   "parameters": {
+    "operation": "update",
+    "documentId": {
+     "__rl": true,
+     "cachedResultName": "Video Automation Prompts",
+     "mode": "list",
+     "value": "1fA5aG83SbcSR-GzOQlmlXU4ZBgMnYt0pidbPoLjE5ps"
+    },
+    "sheetName": {
+     "__rl": true,
+     "cachedResultName": "Sheet1",
+     "mode": "list",
+     "value": "gid=0"
+    },
+    "columns": {
+     "attemptToConvertTypes": false,
+     "convertFieldsToString": false,
+     "mappingMode": "autoMapInputData",
+     "matchingColumns": [
+      "row_number"
+     ],
+     "schema": [],
+     "value": null
+    },
+    "options": {}
+   },
+   "id": "c931edbb-9023-4024-b628-43d2c76e03ae",
+   "name": "Save results to sheet",
+   "type": "n8n-nodes-base.googleSheets",
+   "typeVersion": 4.7,
+   "position": [
+    560,
+    336
+   ]
+  },
+  {
+   "parameters": {
+    "chatId": "YOUR_TELEGRAM_CHAT_ID",
+    "text": "={{ 'Video ready: ' + $('Parse SEO').first().json.title + '\\n' + $('Save video to Drive').first().json.webViewLink }}",
+    "additionalFields": {}
+   },
+   "id": "b98133bb-8ff3-4f20-8e89-d570dbd29ffc",
+   "name": "Notify Telegram (optional)",
+   "type": "n8n-nodes-base.telegram",
+   "typeVersion": 1.2,
+   "position": [
+    784,
+    336
+   ],
+   "webhookId": "888ec0b5-0a90-47b8-8404-d245f722c6b5",
+   "disabled": true,
+   "notes": "OFF by default. Create a free bot with @BotFather, add credential, set chat id, enable."
+  },
+  {
+   "parameters": {
+    "jsCode": "const scenes = $('Parse script').all();\nconst pxa = $('Find Pexels clip').all();\nconst pxb = $('Find Pexels alt clip').all();\nconst wkv = $('Find Wikimedia video').all();\nconst pxv = $('Find Pixabay clips').all();\nconst pbx = $('Find Pixabay photos').all();\nconst wkm = $('Find Wikimedia photos').all();\nconst pbp = $('Find Pexels photos').all();\nconst cfg = $('Video settings').first().json;\nconst hd = String(cfg.resolution) === '1080';\nconst fmt = String(cfg.format || '16:9');\nconst target = hd ? 1920 : 1280;\n\nconst words = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9 ]/g, ' ').split(/\\s+/).filter(w => w.length > 2);\nconst orientOk = (w, h) => { if (!w || !h) return true; if (fmt === '9:16') return h >= w; if (fmt === '1:1') return true; return w >= h; };\nconst side = (v) => Math.max(v.width || 0, v.height || 0);\nconst pickVariant = (list) => {\n  const ok = list.filter(v => v && v.url && orientOk(v.width, v.height));\n  if (!ok.length) return null;\n  ok.sort((a, b) => (Math.abs(side(a) - target) - Math.abs(side(b) - target)) || ((a.size || 0) - (b.size || 0)));\n  return ok[0];\n};\n\nconst fromPexels = (item) => (item?.json?.videos || []).map(v => {\n  const files = (v.video_files || []).filter(x => x.file_type === 'video/mp4' && x.link).map(x => ({ url: x.link, width: x.width, height: x.height, size: 0 }));\n  const f = pickVariant(files);\n  if (!f) return null;\n  const dur = Number(v.duration) || 0;\n  if (dur && dur < 4) return null;\n  const slug = (String(v.url || '').split('/video/')[1] || '').replace(/[-\\/]/g, ' ').replace(/\\d+/g, ' ').trim();\n  return { url: f.url, dur, tags: slug, type: 'film', src: 'pexels' };\n}).filter(Boolean);\n\nconst fromWikimediaVideo = (item) => {\n  const raw = item?.json?.query?.pages;\n  const pages = Array.isArray(raw) ? raw : Object.values(raw || {});\n  return pages.map(p => {\n    const ii = (p.imageinfo || [])[0];\n    if (!ii || !ii.url) return null;\n    if (!/^video\\//i.test(String(ii.mime || ''))) return null;\n    if ((ii.width || 0) < 480) return null;\n    if ((ii.size || 0) > 80 * 1024 * 1024) return null;   // skip huge files, slow to download\n    const title = String(p.title || '').replace(/^File:/i, '').replace(/\\.[a-z0-9]+$/i, '').replace(/[-_]/g, ' ');\n    return { url: ii.url.split('?')[0], dur: Number(ii.duration) || 0, tags: title.slice(0, 120), type: 'film', src: 'wikimedia' };\n  }).filter(Boolean);\n};\n\nconst fromPixabayVideo = (item) => (item?.json?.hits || []).map(h => {\n  const v = h.videos || {};\n  const variants = ['large', 'medium', 'small'].map(k => v[k] && { url: v[k].url, width: v[k].width, height: v[k].height, size: 0 }).filter(Boolean);\n  const f = pickVariant(variants);\n  if (!f) return null;\n  const dur = Number(f.dur ?? h.duration) || 0;\n  if (dur && dur < 4) return null;\n  return { url: f.url, dur, tags: String(h.tags || ''), type: 'film', src: 'pixabay' };\n}).filter(Boolean);\n\nconst fromPixabayPhotos = (item) => (item?.json?.hits || [])\n  .filter(h => h.largeImageURL)\n  .map(h => ({ url: h.largeImageURL, dur: 0, tags: String(h.tags || ''), type: 'photo', src: 'pixabay-photo' }));\n\nconst fromWikimedia = (item) => {\n  const raw = item?.json?.query?.pages;\n  const pages = Array.isArray(raw) ? raw : Object.values(raw || {});\n  return pages.map(p => {\n    const ii = (p.imageinfo || [])[0];\n    if (!ii || !ii.thumburl) return null;\n    if (!/jpe?g|png/i.test(String(ii.mime || ''))) return null;\n    if ((ii.thumbwidth || ii.width || 0) < 800) return null;\n    const title = String(p.title || '').replace(/^File:/i, '').replace(/\\.[a-z]+$/i, '').replace(/[-_]/g, ' ').replace(/\\d{3,}px/g, ' ');\n    return { url: ii.thumburl, dur: 0, tags: title.slice(0, 120), type: 'photo', src: 'wikimedia' };\n  }).filter(Boolean);\n};\n\nconst fromPexelsPhotos = (item) => (item?.json?.photos || []).map(p => {\n  const url = p?.src?.large2x || p?.src?.large || p?.src?.original;\n  if (!url) return null;\n  return { url, dur: 0, tags: [p.alt, p.photographer].filter(Boolean).join(' '), type: 'photo', src: 'pexels-photo' };\n}).filter(Boolean);\n\nconst score = (c, kw, alt) => {\n  const tags = words(c.tags);\n  const hit = (list) => list.filter(w => tags.some(t => t === w || t.startsWith(w) || w.startsWith(t))).length;\n  return hit(words(kw)) * 3 + hit(words(alt)) * 1.5 + (c.dur >= 8 ? 1 : 0) + (c.dur >= 5 ? 0.5 : 0) - (c.type === 'animation' ? 1.5 : 0);\n};\n\nconst dedupe = (all) => {\n  const seen = new Set();\n  return all.filter(c => (seen.has(c.url) ? false : (seen.add(c.url), true)));\n};\n\nconst pool = scenes.map((s, i) => {\n  const kw = s.json.keywords, alt = s.json.alt_keywords;\n  const all = [...fromPexels(pxa[i]), ...fromPexels(pxb[i]), ...fromPixabayVideo(pxv[i]), ...fromWikimediaVideo(wkv[i])];\n  return dedupe(all)\n    .map(c => ({ ...c, score: score(c, kw, alt) }))\n    .sort((a, b) => b.score - a.score)\n    .slice(0, 10);\n});\n\nconst photos = scenes.map((s, i) => {\n  const kw = s.json.keywords, alt = s.json.alt_keywords;\n  const all = [...fromWikimedia(wkm[i]), ...fromPexelsPhotos(pbp[i]), ...fromPixabayPhotos(pbx[i])];\n  return dedupe(all)\n    .map(c => ({ ...c, score: score(c, kw, alt) }))\n    .sort((a, b) => b.score - a.score)\n    .slice(0, 6);\n});\n\nconst curator_input = scenes.map((s, i) => {\n  const vLines = (pool[i] || []).map((c, j) => '  V' + j + ') ' + c.tags.slice(0, 80) + ' | ' + Math.round(c.dur) + 's video (' + c.src + ')');\n  const pLines = (photos[i] || []).map((c, j) => '  P' + j + ') ' + c.tags.slice(0, 80) + ' | photo (' + c.src + ')');\n  return 'SCENE ' + i + ': ' + String(s.json.narration).slice(0, 220) + '\\n' + (vLines.length ? vLines.join('\\n') : '  (no video candidates)') + '\\n' + (pLines.length ? pLines.join('\\n') : '  (no photo candidates)');\n}).join('\\n\\n');\n\nreturn [{ json: { pool, photos, curator_input, scene_count: scenes.length } }];"
+   },
+   "id": "ccfc1e93-5b59-407e-93bf-03b8ca9b28b3",
+   "name": "Build clip candidates",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -3360,
+    208
+   ],
+   "notes": "Collects clips from every search, drops portrait/low-quality ones, picks the right file size and ranks by tag match. Passes the top 10 per scene to the AI editor."
+  },
+  {
+   "parameters": {
+    "modelId": {
+     "__rl": true,
+     "cachedResultName": "models/gemini-2.5-flash",
+     "mode": "list",
+     "value": "models/gemini-2.5-flash"
+    },
+    "messages": {
+     "values": [
+      {
+       "content": "=You are a documentary video editor choosing stock footage AND archive photos.\nVideo title: {{ $('Parse script').first().json.title }}\n\nBelow, each SCENE has its narration and numbered candidates. V-lines are video clips (tags | length), P-lines are photos (tags) that will be shown full-screen with a slow camera move.\nFor every scene choose:\n- picks: up to 3 video candidate numbers (the V numbers) whose footage best illustrates what the narration says, in the right topic and era.\n- photos: up to 2 photo candidate numbers (the P numbers) that show the scene subject - best for historical, archival, places and people topics, or when the video list is weak.\nRules:\n- Prefer videos when a good match exists. Use photos when the video candidates contradict the scene or do not show the subject.\n- Prefer clips that show the subject directly. Specific beats generic.\n- Never pick a candidate whose tags clearly contradict the scene (for example modern tourism or unrelated cities and nature for a historical war scene).\n- If nothing fits a scene, return empty lists and set \"ai\": true - the renderer will then generate an AI image from that scene's image_prompt.\n- Each scene block also has an \"A)\" line showing what AI image would be generated. If A is clearly the best visual for the scene, set \"ai\": true.\n- Order each list from best to worst.\n\nReturn ONLY compact JSON, no markdown: {\"scenes\":[{\"i\":0,\"picks\":[2,0],\"photos\":[1],\"ai\":false}]}\n\n{{ $('QA 2: fix clip gaps').first().json.curator_input }}"
+      }
+     ]
+    },
+    "jsonOutput": true,
+    "builtInTools": {},
+    "options": {
+     "maxOutputTokens": 8192,
+     "temperature": 0.2,
+     "thinkingBudget": 0
+    }
+   },
+   "id": "82ad298b-f464-4211-95dc-ad2765121e47",
+   "name": "Pick best clips",
+   "type": "@n8n/n8n-nodes-langchain.googleGemini",
+   "typeVersion": 1.2,
+   "position": [
+    -3136,
+    208
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 3000,
+   "credentials": {
+    "googlePalmApi": {
+     "id": null,
+     "name": "Gateway credits",
+     "__aiGatewayManaged": true
+    }
+   },
+   "onError": "continueRegularOutput",
+   "notes": "AI video editor: reads each scene's narration and the candidate clips' tags, then picks the clips that really fit. If it fails, the workflow falls back to keyword ranking."
+  },
+  {
+   "parameters": {
+    "assignments": {
+     "assignments": [
+      {
+       "id": "st1",
+       "name": "studio_vision",
+       "type": "boolean",
+       "value": true
+      },
+      {
+       "id": "st2",
+       "name": "studio_ai_images",
+       "type": "boolean",
+       "value": true
+      },
+      {
+       "id": "st3",
+       "name": "studio_max_ai_images",
+       "type": "number",
+       "value": 8
+      },
+      {
+       "id": "st4",
+       "name": "studio_animations",
+       "type": "boolean",
+       "value": true
+      },
+      {
+       "id": "st5",
+       "name": "studio_sfx",
+       "type": "boolean",
+       "value": true
+      }
+     ]
+    },
+    "includeOtherFields": true,
+    "options": {}
+   },
+   "id": "f62317ae-373d-4c44-9524-0bedc970d98f",
+   "name": "Studio settings",
+   "type": "n8n-nodes-base.set",
+   "typeVersion": 3.4,
+   "position": [
+    -6448,
+    208
+   ],
+   "notes": "Studio switches (GitHub editing room): vision = Gemini checks every clip, ai_images = AI image + Ken Burns animation when footage does not fit (max_ai_images per video), animations = animated title / key phrases / richer transitions, sfx = whoosh sound effects. Set to false to turn a feature off."
+  },
+  {
+   "parameters": {
+    "jsCode": "// 2 minute safety margin for clock differences between n8n and GitHub\nconst started = new Date(Date.now() - 120000).toISOString().replace(/\\.\\d+Z$/, 'Z');\nreturn [{ json: { started_at: started } }];"
+   },
+   "id": "d43ce246-d3f2-4824-9d8b-55fbf6f19462",
+   "name": "Set start time",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -2192,
+    272
+   ],
+   "notes": "Saves the dispatch time so the loop can find OUR GitHub run (the dispatch API does not return a run id)."
+  },
+  {
+   "parameters": {
+    "amount": 2,
+    "unit": "minutes"
+   },
+   "id": "ea702b7c-b07c-4441-b2ce-8f00aae9910e",
+   "name": "Wait 2 min",
+   "type": "n8n-nodes-base.wait",
+   "typeVersion": 1.1,
+   "position": [
+    -1968,
+    272
+   ],
+   "webhookId": "4975938e-f261-47ef-a567-d07313a4af0c",
+   "notes": "Polling loop: waits 2 minutes, then checks GitHub. No webhook needed."
+  },
+  {
+   "parameters": {
+    "url": "=https://api.github.com/repos/{{ $('Collect video plan').first().json.github_repo }}/actions/workflows/render.yml/runs",
+    "authentication": "genericCredentialType",
+    "genericAuthType": "httpHeaderAuth",
+    "sendQuery": true,
+    "queryParameters": {
+     "parameters": [
+      {
+       "name": "event",
+       "value": "workflow_dispatch"
+      },
+      {
+       "name": "per_page",
+       "value": "10"
+      },
+      {
+       "name": "created",
+       "value": "={{ '>=' + $('Set start time').first().json.started_at }}"
+      }
+     ]
+    },
+    "sendHeaders": true,
+    "headerParameters": {
+     "parameters": [
+      {
+       "name": "Accept",
+       "value": "application/vnd.github+json"
+      },
+      {
+       "name": "X-GitHub-Api-Version",
+       "value": "2022-11-28"
+      },
+      {
+       "name": "User-Agent",
+       "value": "n8n"
+      }
+     ]
+    },
+    "options": {}
+   },
+   "id": "7679cb53-a84d-4d19-903b-825667958947",
+   "name": "Check GitHub run",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -1744,
+    96
+   ],
+   "retryOnFail": true,
+   "maxTries": 5,
+   "waitBetweenTries": 5000,
+   "onError": "continueRegularOutput",
+   "notes": "Lists render.yml runs started after the dispatch. Uses the same GitHub Header Auth credential."
+  },
+  {
+   "parameters": {
+    "jsCode": "const res = $input.first().json;\nconst plan = $('Collect video plan').first().json;\nconst started = new Date($('Set start time').first().json.started_at);\n// 170 checks x 2 min = 340 min. The GitHub job timeout on branch v22 is 330 min, so a render can never finish after we gave up.\nconst MAX_CHECKS = 170;\nconst attempt = $runIndex + 1;\n\n// If GitHub answered with an error this time (rate limit, 5xx), res has no workflow_runs: just poll again.\nconst runs = Array.isArray(res.workflow_runs) ? res.workflow_runs : [];\nconst recent = runs.filter(r => new Date(r.created_at) >= started);\n// prefer a run whose title/name contains our job id, otherwise the oldest run after dispatch\nconst mine = recent.filter(r => JSON.stringify([r.name, r.display_title, r.run_number]).includes(plan.job_id));\nconst pool = (mine.length ? mine : recent).sort((a, b) => new Date(a.created_at) - new Date(b.created_at));\nconst run = pool[0];\nconst fallbackUrl = 'https://github.com/' + plan.github_repo + '/actions';\n\nif (run && run.status === 'completed') {\n  return [{ json: { done: true, attempt, body: { status: run.conclusion || 'failure', run_url: run.html_url || fallbackUrl, run_id: run.id } } }];\n}\nif (attempt >= MAX_CHECKS) {\n  return [{ json: { done: true, attempt, body: { status: 'timeout', run_url: (run && run.html_url) || fallbackUrl, run_id: run ? run.id : null } } }];\n}\nreturn [{ json: { done: false, attempt, body: { status: run ? run.status : 'waiting_for_run', run_url: (run && run.html_url) || fallbackUrl, run_id: run ? run.id : null } } }];"
+   },
+   "id": "26be20c4-00c2-4785-8612-9f293dc4ffa2",
+   "name": "Parse run status",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -1520,
+    96
+   ],
+   "notes": "Finds our run, decides done / not done. Gives up after 45 checks (~90 min)."
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "combinator": "and",
+     "conditions": [
+      {
+       "id": "d1",
+       "leftValue": "={{ $json.done }}",
+       "operator": {
+        "operation": "true",
+        "singleValue": true,
+        "type": "boolean"
+       }
+      }
+     ],
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "",
+      "typeValidation": "strict",
+      "version": 2
+     }
+    },
+    "options": {}
+   },
+   "id": "64950329-44d2-4302-bdf8-17ac0bf7b648",
+   "name": "Render finished?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    -1296,
+    272
+   ]
+  },
+  {
+   "parameters": {
+    "jsCode": "const base = $input.first().json;\nconst row = $('Only rows without video').first().json;\nconst lower = (v) => String(v == null ? '' : v).trim().toLowerCase();\nconst styles = ['documentary', 'presenter', 'podcast', 'cartoon', 'animation', '2d', '3d'];\nlet style = lower(row.STYLE);\nif (!styles.includes(style)) style = 'documentary';\nconst male = /andrew|christopher|pradeep|guy|madhur|asad|hamed|brian/.test(lower(base.voice));\nconst valid = ['girl-1', 'boy-1', 'cartoon-boy-1', 'cartoon-girl-1', 'robot-1', 'grandpa-1', 'kid-boy-1', 'bizman-1'];\nlet avatar = lower(row.AVATAR);\nif (!valid.includes(avatar)) avatar = '';\nif (!avatar) {\n  if (style === 'cartoon' || style === '2d' || style === '3d') avatar = male ? 'cartoon-boy-1' : 'cartoon-girl-1';\n  else if (style === 'presenter' || style === 'podcast') avatar = male ? 'boy-1' : 'girl-1';\n}\nif (style === 'documentary') avatar = '';\nconst plan = JSON.parse(base.plan_json);\nplan.style = style;\nplan.avatar = avatar;\nplan.avatar_mode = (style === 'podcast' || style === 'cartoon' || style === '2d' || style === '3d') ? 'center' : 'corner';\nconst plan_json = JSON.stringify(plan);\nif (plan_json.length > 62000) throw new Error('Plan too large for GitHub dispatch: ' + plan_json.length);\nreturn [{ json: { ...base, plan_json, style, avatar } }];"
+   },
+   "id": "3afe52b9-3c6e-4edb-82dc-08ffe1f2d96d",
+   "name": "Add style and avatar",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -3712,
+    208
+   ],
+   "notes": "New: reads the optional STYLE / AVATAR sheet columns (documentary, presenter, podcast, cartoon, animation) and adds style, avatar and avatar_mode to the render plan. Empty STYLE = documentary, no avatar (same as before)."
+  },
+  {
+   "parameters": {
+    "jsCode": "const headers = Object.keys($('Read prompts').first().json).filter(k => k !== 'row_number');\nconst col = (n) => headers.find(h => String(h).trim().toLowerCase() === n.toLowerCase()) || n;\nconst plan = $('Collect video plan').first().json;\nreturn [{ json: { row_number: plan.row_number, [col('STATUS')]: 'processing ' + new Date().toISOString() } }];"
+   },
+   "id": "616db0c5-98c4-439f-a493-66544c846f3f",
+   "name": "Map for sheet (processing)",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -2864,
+    208
+   ],
+   "notes": "PERMANENT SHEET FIX: writes to the sheet using the EXACT header names that exist in your sheet (any upper/lower case), so a header called video, Video or VIDEO all work."
+  },
+  {
+   "parameters": {
+    "jsCode": "const headers = Object.keys($('Read prompts').first().json).filter(k => k !== 'row_number');\nconst col = (n) => headers.find(h => String(h).trim().toLowerCase() === n.toLowerCase()) || n;\nconst j = $input.first().json || {};\nconst plan = $('Collect video plan').first().json;\nconst why = j.body?.run_url || (j.error?.message ? String(j.error.message).slice(0, 120) : (j.body?.status ? 'render ' + j.body.status + ', see GitHub Actions tab' : 'render timed out, see GitHub Actions tab'));\nreturn [{ json: { row_number: plan.row_number, [col('STATUS')]: 'failed: ' + why, ...j } }].map(x => ({ json: { row_number: x.json.row_number, [col('STATUS')]: x.json[col('STATUS')], body: j.body, error: j.error } }));"
+   },
+   "id": "16bbda0b-e873-4b62-8a34-2b649944d846",
+   "name": "Map for sheet (failed)",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    0,
+    0
+   ],
+   "notes": "PERMANENT SHEET FIX: builds the failure row with the exact header names of your sheet."
+  },
+  {
+   "parameters": {
+    "jsCode": "const headers = Object.keys($('Read prompts').first().json).filter(k => k !== 'row_number');\nconst col = (n) => headers.find(h => String(h).trim().toLowerCase() === n.toLowerCase()) || n;\nconst thumb = $input.first().json.webViewLink || '';\nconst video = $('Save video to Drive').first().json.webViewLink || '';\nconst seo = $('Parse SEO').first().json;\nconst plan = $('Collect video plan').first().json;\nreturn [{ json: {\n  row_number: plan.row_number,\n  [col('VIDEO')]: video,\n  [col('THUMBNAIL')]: thumb,\n  [col('STATUS')]: 'done',\n  [col('TITLE')]: seo.title,\n  [col('DESCRIPTION')]: seo.description,\n  [col('TAGS')]: seo.tags\n} }];"
+   },
+   "id": "0fb584f4-e1d5-4529-952b-f70b5ed931d5",
+   "name": "Map for sheet (done)",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    336,
+    336
+   ],
+   "notes": "PERMANENT SHEET FIX: builds the final result row with the exact header names of your sheet (video / VIDEO / Video ...)."
+  },
+  {
+   "parameters": {
+    "modelId": {
+     "__rl": true,
+     "cachedResultName": "models/gemini-2.5-flash",
+     "mode": "list",
+     "value": "models/gemini-2.5-flash"
+    },
+    "messages": {
+     "values": [
+      {
+       "content": "=You are continuing a YouTube script that is written in two parts. The FIRST part is already written. Your job is ONLY the second half of the scenes.\n\nVideo brief (the same one part one followed):\n{{ $('Video settings').first().json.PROMPT }}\n\nAudience: {{ $('Video settings').first().json.audience }}\nStyle: {{ $('Video settings').first().json.style }}\nTotal scenes: {{ $('Video settings').first().json.scene_count }}\n\nFIRST PART OF THE SCRIPT (already written - continue from here, NEVER repeat or rewrite any of it):\n{{ ($('Write script').first().json?.content?.parts?.[0]?.text) || $('Write script').first().json?.parts?.[0]?.text || $('Write script').first().json?.text || JSON.stringify($('Write script').first().json) }}\n\nNOW WRITE ONLY scenes {{ Math.ceil($('Video settings').first().json.scene_count / 2) }} + 1 through {{ $('Video settings').first().json.scene_count }} (if the brief lists numbered scenes: cover ONLY the listed scenes NOT yet covered above; scene numbers stay in your head, never in the text).\n\nFollow exactly the same output format and rules as part one: same JSON scene shape, same language, same tone, TTS-safe text (numbers in words, no abbreviations, no parentheses, no brackets, no braces, no emojis, no markdown, no stage directions), same narration quality, and for every scene the full visual fields: visual, queries (exactly 4 English phrases, most specific first, all different from part one), keywords, alt_keywords, text (on-screen key phrase every second scene, empty string otherwise), visual_type (footage, or animation for at most one scene in four), image_prompt (25 to 40 words, no text or logos in the image).\nNever repeat a fact, example, phrase or visual from part one. Build to a strong ending: second to last scene is a short recap, the last scene is the payoff plus one short call to subscribe.\n\nReturn ONLY valid compact JSON in exactly this shape:\n{\"scenes\":[{\"narration\":\"...\",\"keywords\":\"...\",\"alt_keywords\":\"...\",\"visual\":\"...\",\"queries\":[\"...\"],\"text\":\"...\",\"visual_type\":\"footage\",\"image_prompt\":\"...\"}]}\n\nEscape any double quote inside any field. Never put a curly brace inside any field.\nCRITICAL: Do not stop early. Do not skip any scene assigned to you. Every scene gets its full text and all its visual fields. End the JSON properly with all closing brackets."
+      }
+     ]
+    },
+    "jsonOutput": true,
+    "builtInTools": {},
+    "options": {
+     "maxOutputTokens": 32768
+    }
+   },
+   "id": "6c697892-3a55-4120-b42f-5626fef77476",
+   "name": "Write script B",
+   "type": "@n8n/n8n-nodes-langchain.googleGemini",
+   "typeVersion": 1.2,
+   "position": [
+    -5520,
+    208
+   ],
+   "retryOnFail": true,
+   "maxTries": 3,
+   "waitBetweenTries": 5000,
+   "credentials": {
+    "googlePalmApi": {
+     "id": null,
+     "name": "Gateway credits",
+     "__aiGatewayManaged": true
+    }
+   }
+  },
+  {
+   "parameters": {
+    "jsCode": "const extract = (res) => {\n  if (res && Array.isArray(res.scenes)) return res;\n  let raw = res?.content?.parts?.[0]?.text ?? res?.parts?.[0]?.text ?? res?.text ?? res?.output ?? '';\n  if (typeof raw !== 'string') raw = JSON.stringify(raw);\n  raw = raw.split('```json').join('').split('```').join('').trim();\n  try { return JSON.parse(raw); } catch (e) {\n    const found = [];\n    const re = /[{][^{}]*\"narration\"[^{}]*[}]/g;\n    let m;\n    while ((m = re.exec(raw)) !== null) { try { found.push(JSON.parse(m[0])); } catch (_) {} }\n    const pick = (k) => { const x = raw.match(new RegExp('\"' + k + '\"\\\\s*:\\\\s*\"((?:[^\"\\\\\\\\]|\\\\\\\\.)*\"')); return x ? x[1] : ''; };\n    return { title: pick('title'), thumbnail_text: pick('thumbnail_text'), language: pick('language') || 'en', music_mood: pick('music_mood'), scenes: found };\n  }\n};\nconst a = extract($('Write script').first().json) || {};\nconst b = extract($input.first().json) || {};\nconst scenes = [].concat(a.scenes || [], b.scenes || []);\nconst cfg = $('Video settings').first().json;\nif (scenes.length < Math.max(3, Math.ceil((Number(cfg.scene_count) || 0) * 0.8))) {\n  throw new Error('Merged script has ' + scenes.length + ' of ' + cfg.scene_count + ' scenes (a half was cut off). It will retry on the next run.');\n}\nreturn [{ json: Object.assign({}, a, { scenes }) }];"
+   },
+   "id": "d90546de-6a68-4159-89bd-3945b5d2fa53",
+   "name": "Merge scripts",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -5168,
+    208
+   ]
+  },
+  {
+   "parameters": {
+    "url": "https://commons.wikimedia.org/w/api.php",
+    "options": {
+     "batching": {
+      "batch": {
+       "batchSize": 1,
+       "batchInterval": 1200
+      }
+     },
+     "response": {
+      "response": {
+       "responseFormat": "json"
+      }
+     }
+    }
+   },
+   "id": "b14be8b3-dab4-47c5-89ca-14a4e078519d",
+   "name": "Find Wikimedia photos",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -3712,
+    208
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 2000,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "url": "https://api.pexels.com/v1/search",
+    "options": {
+     "batching": {
+      "batch": {
+       "batchSize": 1,
+       "batchInterval": 800
+      }
+     },
+     "response": {
+      "response": {
+       "responseFormat": "json"
+      }
+     }
+    }
+   },
+   "id": "7ac710f2-7c32-41cf-9701-9581d1c3406d",
+   "name": "Find Pexels photos",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -3584,
+    208
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 2000,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "url": "https://pixabay.com/api/videos/",
+    "options": {
+     "batching": {
+      "batch": {
+       "batchSize": 1,
+       "batchInterval": 900
+      }
+     },
+     "response": {
+      "response": {
+       "responseFormat": "json"
+      }
+     }
+    }
+   },
+   "id": "d26e8fe1-e5a9-497a-93c8-bb5ca3478abc",
+   "name": "Find Pixabay clips",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -4096,
+    208
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 2000,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "url": "https://pixabay.com/api/",
+    "options": {
+     "batching": {
+      "batch": {
+       "batchSize": 1,
+       "batchInterval": 900
+      }
+     },
+     "response": {
+      "response": {
+       "responseFormat": "json"
+      }
+     }
+    }
+   },
+   "id": "d5e8af95-3df3-4703-ae92-2f0d9a72eacb",
+   "name": "Find Pixabay photos",
+   "type": "n8n-nodes-base.httpRequest",
+   "typeVersion": 4.2,
+   "position": [
+    -3520,
+    208
+   ],
+   "retryOnFail": true,
+   "maxTries": 2,
+   "waitBetweenTries": 2000,
+   "onError": "continueRegularOutput"
+  },
+  {
+   "parameters": {
+    "resource": "folder",
+    "name": "={{ $('Collect video plan').first().json.title.replace(/[\\\\/:*?\\\"<>|]/g, '').slice(0, 90) }}",
+    "driveId": {
+     "__rl": true,
+     "mode": "list",
+     "value": "My Drive"
+    },
+    "folderId": {
+     "__rl": true,
+     "value": "1wTavoiWxBMj1YZFAEx2TOsR3gHrImOQ9",
+     "mode": "list",
+     "cachedResultName": "rafi video",
+     "cachedResultUrl": "https://drive.google.com/drive/folders/1wTavoiWxBMj1YZFAEx2TOsR3gHrImOQ9"
+    },
+    "options": {}
+   },
+   "id": "439b0661-676a-483c-ae02-e1820d82536c",
+   "name": "Create video folder",
+   "type": "n8n-nodes-base.googleDrive",
+   "typeVersion": 3,
+   "position": [
+    -672,
+    560
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForEachItem",
+    "jsCode": "// Per-scene repair pass: every scene gets keywords, alt_keywords, image_prompt.\nconst j = $json;\nconst words = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9\\u0980-\\u09ff ]/g, ' ').split(/\\s+/).filter(w => w.length > 3 && !['this','that','with','from','they','them','have','been','will','your','into','also','about','which','their','there','these','those','when','while','very','much','more','most','some','just','like','make','made','take','took','over','than','then','because'].includes(w));\nconst narr = String(j.narration || (j.lines || []).map(l => l.text).join(' ') || '').trim();\nconst title = String($('Parse script').first().json.title || '');\nif (!narr) { throw new Error('QA 1: scene ' + $itemIndex + ' has no narration at all - script is broken'); }\nif (!j.keywords || !String(j.keywords).trim()) j.keywords = words(narr).slice(0, 6).join(' ') || words(title).slice(0, 4).join(' ');\nif (!j.alt_keywords || !String(j.alt_keywords).trim()) j.alt_keywords = words(narr).slice(6, 11).join(' ') || words(title).slice(0, 4).join(' ');\nif (!j.image_prompt || !String(j.image_prompt).trim()) j.image_prompt = narr.slice(0, 300);\nj.keywords = String(j.keywords).slice(0, 120);\nj.alt_keywords = String(j.alt_keywords).slice(0, 120);\nj.image_prompt = String(j.image_prompt).slice(0, 400);\nreturn { json: j };"
+   },
+   "id": "qa1-fix-scenes-v50",
+   "name": "QA 1: fix scenes",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -4656,
+    208
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "// Rebuild the curator input and always offer the AI-image option per scene.\nconst scenes = $('QA 1: fix scenes').all();\nconst base = $input.first().json;\nconst pool = base.pool || [];\nconst photos = base.photos || [];\nconst curator_input = scenes.map((s, i) => {\n  const vLines = (pool[i] || []).map((c, j) => '  V' + j + ') ' + c.tags.slice(0, 80) + ' | ' + Math.round(c.dur) + 's video (' + c.src + ')');\n  const pLines = (photos[i] || []).map((c, j) => '  P' + j + ') ' + c.tags.slice(0, 80) + ' | photo (' + c.src + ')');\n  const hasVisual = vLines.length || pLines.length;\n  const aiLine = '  A) AI-GENERATED IMAGE: \"' + String(s.json.image_prompt || s.json.narration || '').slice(0, 90) + '\" (renderer will create it)';\n  return 'SCENE ' + i + ': ' + String(s.json.narration).slice(0, 220) + '\\n' +\n    (vLines.length ? vLines.join('\\n') : '  (no video candidates)') + '\\n' +\n    (pLines.length ? pLines.join('\\n') : '  (no photo candidates)') +\n    (hasVisual ? '\\n' + aiLine + '  <- fallback if nothing above fits' : '\\n' + aiLine + '  <- ONLY option, but a good one');\n}).join('\\n\\n');\nreturn [{ json: { pool, photos, curator_input, scene_count: scenes.length } }];"
+   },
+   "id": "qa2-clip-gaps-v50",
+   "name": "QA 2: fix clip gaps",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -3184,
+    208
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "// Last gate before GitHub: the plan must be render-ready.\nconst base = $input.first().json;\nconst plan = JSON.parse(base.plan_json);\nconst HOST_OK = /(^|\\.)((videos|images)\\.pexels\\.com|pexels\\.com|cdn\\.pixabay\\.com|pixabay\\.com|(upload|commons)\\.wikimedia\\.org|wikipedia\\.org|image\\.pollinations\\.ai)$/i;\nconst scenes = plan.scenes || [];\nconst errors = [];\nif (!scenes.length) errors.push('plan has no scenes');\nif (!plan.title) plan.title = 'Untitled video';\nif (!plan.style) plan.style = 'documentary';\nlet stockUrls = 0, aiScenes = 0, fixedUrls = 0;\nscenes.forEach((s, i) => {\n  const hasVoice = (s.lines && s.lines.length) || String(s.narration || '').trim();\n  if (!hasVoice) errors.push('scene ' + i + ' has no narration/dialogue');\n  if (Array.isArray(s.footage)) {\n    const ok = s.footage.filter(u => { try { return HOST_OK.test(new URL(u).hostname); } catch (e) { return false; } });\n    if (ok.length < s.footage.length) { fixedUrls += s.footage.length - ok.length; s.footage = ok; }\n    stockUrls += ok.length;\n  }\n  if (!s.image_prompt || !String(s.image_prompt).trim()) s.image_prompt = String(s.narration || '').slice(0, 300);\n  if (!Array.isArray(s.footage) || !s.footage.length) aiScenes++;\n});\nif (errors.length) throw new Error('QA 3 blocked render: ' + errors.slice(0, 3).join(' | '));\nconsole.log('QA 3: scenes=' + scenes.length + ' stock-urls=' + stockUrls + ' ai-fallback-scenes=' + aiScenes + ' removed-bad-urls=' + fixedUrls);\nconst plan_json = JSON.stringify(plan);\nif (plan_json.length > 62000) throw new Error('Plan too large for GitHub dispatch: ' + plan_json.length);\nreturn [{ json: { ...base, plan_json } }];"
+   },
+   "id": "qa3-plan-check-v50",
+   "name": "QA 3: final plan check",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -3536,
+    208
+   ]
+  },
+  {
+   "parameters": {
+    "mode": "runOnceForAllItems",
+    "jsCode": "// Verify the rendered file is a real video, not a broken/empty download.\nconst item = $input.first();\nconst b = item.binary && item.binary.video;\nif (!b) throw new Error('QA 4: no video file received from GitHub');\nlet size = Number(b.fileSize || 0);\nif (!size && b.data) size = Math.floor((b.data.length * 3) / 4) - 2;\nconst mb = size / (1024 * 1024);\nif (mb < 1) throw new Error('QA 4: output file too small (' + mb.toFixed(2) + ' MB) - render probably failed');\nconsole.log('QA 4: output OK, ' + mb.toFixed(1) + ' MB');\nreturn item;"
+   },
+   "id": "qa4-output-check-v50",
+   "name": "QA 4: check output",
+   "type": "n8n-nodes-base.code",
+   "typeVersion": 2,
+   "position": [
+    -384,
+    432
+   ]
+  },
+  {
+   "parameters": {
+    "conditions": {
+     "options": {
+      "caseSensitive": true,
+      "leftValue": "={{ Math.floor((($input.first().binary.video.fileSize || 0) || ($input.first().binary.video.data ? $input.first().binary.video.data.length * 3 / 4 : 0)) / (1024 * 1024)) }}",
+      "typeValidation": "loose",
+      "version": 2
+     },
+     "conditions": [
+      {
+       "id": "qa4-size",
+       "leftValue": "={{ Math.floor((($input.first().binary.video.fileSize || 0) || ($input.first().binary.video.data ? $input.first().binary.video.data.length * 3 / 4 : 0)) / (1024 * 1024)) }}",
+       "rightValue": 1,
+       "operator": {
+        "type": "number",
+        "operation": "gte",
+        "singleValue": true
+       }
+      }
+     ],
+     "combinator": "and"
+    },
+    "options": {}
+   },
+   "id": "qa4-if-output-ok-v50",
+   "name": "Output file OK?",
+   "type": "n8n-nodes-base.if",
+   "typeVersion": 2.2,
+   "position": [
+    -208,
+    432
+   ]
+  }
+ ],
+ "pinData": {},
+ "connections": {
+  "Start manually": {
+   "main": [
+    [
+     {
+      "node": "Read prompts",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Every 3 hours": {
+   "main": [
+    [
+     {
+      "node": "Read prompts",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Write script": {
+   "main": [
+    [
+     {
+      "node": "Write script B",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Parse script": {
+   "main": [
+    [
+     {
+      "node": "QA 1: fix scenes",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Start render on GitHub": {
+   "main": [
+    [
+     {
+      "node": "Set start time",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Map for sheet (failed)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Render succeeded?": {
+   "main": [
+    [
+     {
+      "node": "Get release",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Map for sheet (failed)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Get release": {
+   "main": [
+    [
+     {
+      "node": "Create video folder",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Read prompts": {
+   "main": [
+    [
+     {
+      "node": "Only rows without video",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Only rows without video": {
+   "main": [
+    [
+     {
+      "node": "Video settings",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Research": {
+   "main": [
+    [
+     {
+      "node": "Write script",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "SEO pack": {
+   "main": [
+    [
+     {
+      "node": "Parse SEO",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mark processing": {
+   "main": [
+    [
+     {
+      "node": "Start render on GitHub",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Mark failed": {
+   "main": [
+    [
+     {
+      "node": "Stop: render failed",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Download final video": {
+   "main": [
+    [
+     {
+      "node": "QA 4: check output",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Save video to Drive": {
+   "main": [
+    [
+     {
+      "node": "Download thumbnail",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Download thumbnail": {
+   "main": [
+    [
+     {
+      "node": "Save thumbnail to Drive",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Save results to sheet": {
+   "main": [
+    [
+     {
+      "node": "Notify Telegram (optional)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Find Pexels clip": {
+   "main": [
+    [
+     {
+      "node": "Find Pexels alt clip",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Build clip candidates": {
+   "main": [
+    [
+     {
+      "node": "QA 2: fix clip gaps",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Pick best clips": {
+   "main": [
+    [
+     {
+      "node": "Collect video plan",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Video settings": {
+   "main": [
+    [
+     {
+      "node": "Studio settings",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Studio settings": {
+   "main": [
+    [
+     {
+      "node": "Research",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Set start time": {
+   "main": [
+    [
+     {
+      "node": "Wait 2 min",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Wait 2 min": {
+   "main": [
+    [
+     {
+      "node": "Check GitHub run",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Check GitHub run": {
+   "main": [
+    [
+     {
+      "node": "Parse run status",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Parse run status": {
+   "main": [
+    [
+     {
+      "node": "Render finished?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Render finished?": {
+   "main": [
+    [
+     {
+      "node": "Render succeeded?",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Wait 2 min",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Collect video plan": {
+   "main": [
+    [
+     {
+      "node": "Add style and avatar",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Add style and avatar": {
+   "main": [
+    [
+     {
+      "node": "QA 3: final plan check",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Parse SEO": {
+   "main": [
+    [
+     {
+      "node": "Map for sheet (processing)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Map for sheet (processing)": {
+   "main": [
+    [
+     {
+      "node": "Mark processing",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Map for sheet (failed)": {
+   "main": [
+    [
+     {
+      "node": "Mark failed",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Save thumbnail to Drive": {
+   "main": [
+    [
+     {
+      "node": "Map for sheet (done)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Map for sheet (done)": {
+   "main": [
+    [
+     {
+      "node": "Save results to sheet",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Write script B": {
+   "main": [
+    [
+     {
+      "node": "Merge scripts",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Merge scripts": {
+   "main": [
+    [
+     {
+      "node": "Parse script",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Find Wikimedia photos": {
+   "main": [
+    [
+     {
+      "node": "Find Pexels photos",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Find Pexels alt clip": {
+   "main": [
+    [
+     {
+      "node": "Find Pixabay clips",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Find Wikimedia video": {
+   "main": [
+    [
+     {
+      "node": "Find Wikimedia photos",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Find Pexels photos": {
+   "main": [
+    [
+     {
+      "node": "Find Pixabay photos",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Find Pixabay clips": {
+   "main": [
+    [
+     {
+      "node": "Find Wikimedia video",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Find Pixabay photos": {
+   "main": [
+    [
+     {
+      "node": "Build clip candidates",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Create video folder": {
+   "main": [
+    [
+     {
+      "node": "Download final video",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "QA 1: fix scenes": {
+   "main": [
+    [
+     {
+      "node": "Find Pexels clip",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "QA 2: fix clip gaps": {
+   "main": [
+    [
+     {
+      "node": "Pick best clips",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "QA 3: final plan check": {
+   "main": [
+    [
+     {
+      "node": "Start render on GitHub",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "QA 4: check output": {
+   "main": [
+    [
+     {
+      "node": "Output file OK?",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  },
+  "Output file OK?": {
+   "main": [
+    [
+     {
+      "node": "Save video to Drive",
+      "type": "main",
+      "index": 0
+     }
+    ],
+    [
+     {
+      "node": "Map for sheet (failed)",
+      "type": "main",
+      "index": 0
+     }
+    ]
+   ]
+  }
+ },
+ "active": false,
+ "settings": {
+  "executionOrder": "v1",
+  "binaryMode": "separate",
+  "availableInMCP": true
+ },
+ "versionId": "4ba35db7-55b2-48c3-a9ef-78e6713c4f67",
+ "meta": {
+  "instanceId": "3569ea6ea4f25ece9ffb094d353af0c1742da19c9e22ae33555be9a17bb50c46"
+ },
+ "nodeGroups": [],
+ "id": "Jldvv92VzPFfSC1Z",
+ "tags": []
+}
